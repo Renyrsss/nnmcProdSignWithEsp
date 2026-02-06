@@ -3,18 +3,36 @@ import { getToken } from "./auth";
 
 const API_URL = `${import.meta.env.VITE_API_BASE}/api`;
 
+// Загрузить все страницы из Strapi (автопагинация)
+const fetchAllPages = async (baseUrl, token) => {
+    let allData = [];
+    let page = 1;
+    const pageSize = 100;
+
+    while (true) {
+        const separator = baseUrl.includes("?") ? "&" : "?";
+        const response = await axios.get(
+            `${baseUrl}${separator}pagination[page]=${page}&pagination[pageSize]=${pageSize}`,
+            { headers: { Authorization: `Bearer ${token}` } }
+        );
+
+        const { data, meta } = response.data;
+        allData = allData.concat(data);
+
+        if (page >= meta.pagination.pageCount) break;
+        page++;
+    }
+
+    return allData;
+};
+
 // Получить документы созданные мной
 export const getMyDocuments = async () => {
     const token = localStorage.getItem("token");
     const user = JSON.parse(localStorage.getItem("user"));
 
-    const response = await axios.get(
-        `${API_URL}/documents?filters[$or][0][creator][id][$eq]=${user.id}&filters[$or][1][assigned_users][id][$eq]=${user.id}&populate[creator][populate]=department&populate[documentType]=true&populate[originalFile]=true&populate[currentFile]=true`,
-        {
-            headers: { Authorization: `Bearer ${token}` },
-        }
-    );
-    return response.data.data;
+    const baseUrl = `${API_URL}/documents?filters[$or][0][creator][id][$eq]=${user.id}&filters[$or][1][assigned_users][id][$eq]=${user.id}&populate[creator][populate]=department&populate[documentType]=true&populate[originalFile]=true&populate[currentFile]=true`;
+    return fetchAllPages(baseUrl, token);
 };
 
 // Получить документы назначенные мне на подпись
@@ -22,13 +40,8 @@ export const getPendingDocuments = async () => {
     const token = localStorage.getItem("token");
     const user = JSON.parse(localStorage.getItem("user"));
 
-    const response = await axios.get(
-        `${API_URL}/documents?filters[assigned_users][id][$eq]=${user.id}&populate[creator][populate]=department&populate[documentType]=true&populate[originalFile]=true&populate[currentFile]=true`,
-        {
-            headers: { Authorization: `Bearer ${token}` },
-        }
-    );
-    return response.data.data;
+    const baseUrl = `${API_URL}/documents?filters[assigned_users][id][$eq]=${user.id}&populate[creator][populate]=department&populate[documentType]=true&populate[originalFile]=true&populate[currentFile]=true`;
+    return fetchAllPages(baseUrl, token);
 };
 
 // Создать документ
