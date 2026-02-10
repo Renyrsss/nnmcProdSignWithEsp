@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Outlet, Link, useLocation } from "react-router-dom";
 import { logout, getCurrentUser } from "../api/auth";
-import { getPendingDocuments } from "../api/documents";
+import { getActionablePendingDocuments } from "../api/documents";
 import { LogOut, FileText, Clock, PlusCircle } from "lucide-react";
 
 export default function MainLayout() {
@@ -9,28 +9,29 @@ export default function MainLayout() {
     const [pendingCount, setPendingCount] = useState(0);
     const location = useLocation();
 
-    useEffect(() => {
-        loadPendingCount();
-        const interval = setInterval(loadPendingCount, 30000);
-        return () => clearInterval(interval);
-    }, []);
-
     const loadPendingCount = async () => {
         try {
-            const pending = await getPendingDocuments();
-
-            // Считаем только те, где текущий пользователь ещё не подписал
-            const count = pending.filter((doc) => {
-                const signers = doc.signers || [];
-                const mySigner = signers.find((s) => s.userId === user.id);
-                return mySigner && mySigner.status === "pending";
-            }).length;
-
-            setPendingCount(count);
+            const pending = await getActionablePendingDocuments();
+            setPendingCount(pending.length);
         } catch (error) {
             console.error("Ошибка загрузки счётчика:", error);
         }
     };
+
+    useEffect(() => {
+        const initialTimer = setTimeout(() => {
+            loadPendingCount();
+        }, 0);
+
+        const interval = setInterval(() => {
+            loadPendingCount();
+        }, 30000);
+
+        return () => {
+            clearTimeout(initialTimer);
+            clearInterval(interval);
+        };
+    }, []);
 
     const handleLogout = () => {
         logout();

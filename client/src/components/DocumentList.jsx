@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import {
     getMyDocuments,
-    getPendingDocuments,
+    getActionablePendingDocuments,
     cancelDocument,
 } from "../api/documents";
 import { getDepartments } from "../api/departments";
@@ -97,13 +97,7 @@ export default function DocumentList({ type = "my" }) {
         try {
             let docs;
             if (type === "pending") {
-                const allPending = await getPendingDocuments();
-                // Фильтруем - показываем только те, где пользователь ещё НЕ подписал
-                docs = allPending.filter((doc) => {
-                    const signers = doc.signers || [];
-                    const mySigner = signers.find((s) => s.userId === user.id);
-                    return mySigner && mySigner.status === "pending";
-                });
+                docs = await getActionablePendingDocuments();
             } else {
                 docs = await getMyDocuments();
             }

@@ -66,6 +66,20 @@ export default function EdsSignature({
 
     const displayFullName = userFullName || getUserFullName();
 
+    const resetSigningState = useCallback(() => {
+        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+            wsRef.current.close();
+        }
+        wsRef.current = null;
+        setStatus("idle");
+        setMessage("");
+        setSignedData(null);
+        setSignedPdfBytes(null);
+        setCertInfo(null);
+        setCmsBlob(null);
+        setPdfData(null);
+    }, []);
+
     // Загружаем шрифты при монтировании
     React.useEffect(() => {
         loadFonts();
@@ -114,12 +128,14 @@ export default function EdsSignature({
     };
 
     React.useEffect(() => {
+        resetSigningState();
+
         if (file) {
             loadFile(file);
         } else if (fileUrl) {
             loadFileFromUrl(fileUrl);
         }
-    }, [file, fileUrl]);
+    }, [file, fileUrl, resetSigningState]);
 
     const loadFile = async (uploadedFile) => {
         try {

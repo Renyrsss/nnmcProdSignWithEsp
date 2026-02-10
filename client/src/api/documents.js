@@ -3,6 +3,22 @@ import { getToken } from "./auth";
 
 const API_URL = `${import.meta.env.VITE_API_BASE}/api`;
 
+export const isMyTurnToSign = (doc, userId) => {
+    const signers = doc?.signers || [];
+    const mySignerIndex = signers.findIndex((s) => Number(s.userId) === Number(userId));
+
+    if (mySignerIndex === -1) return false;
+
+    const mySigner = signers[mySignerIndex];
+    if (mySigner.status !== "pending") return false;
+
+    if (!doc.signatureSequential) return true;
+
+    return signers
+        .slice(0, mySignerIndex)
+        .every((s) => s.status === "signed");
+};
+
 // Загрузить все страницы из Strapi (автопагинация)
 const fetchAllPages = async (baseUrl, token) => {
     let allData = [];
@@ -42,6 +58,12 @@ export const getPendingDocuments = async () => {
 
     const baseUrl = `${API_URL}/documents?filters[assigned_users][id][$eq]=${user.id}&populate[creator][populate]=department&populate[documentType]=true&populate[originalFile]=true&populate[currentFile]=true`;
     return fetchAllPages(baseUrl, token);
+};
+
+export const getActionablePendingDocuments = async () => {
+    const user = JSON.parse(localStorage.getItem("user"));
+    const allPending = await getPendingDocuments();
+    return allPending.filter((doc) => isMyTurnToSign(doc, user.id));
 };
 
 // Создать документ
@@ -110,7 +132,7 @@ export const uploadFile = async (file) => {
 export const getAllUsers = async () => {
     const token = getToken();
     try {
-        const response = await axios.get(`${API_URL}/users`, {
+        const response = await axios.get(`${API_URL}/users?populate=department`, {
             headers: {
                 Authorization: `Bearer ${token}`,
             },

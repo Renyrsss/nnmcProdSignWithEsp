@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { getAllUsers, uploadFile, createDocument } from "../api/documents";
 import { getDocumentTypes } from "../api/documentTypes";
+import { getDepartments } from "../api/departments";
 import { getCurrentUser } from "../api/auth";
 import {
     Upload,
@@ -31,6 +32,9 @@ export default function DocumentCreate() {
     const [signatureType, setSignatureType] = useState(null);
     const [documentTypes, setDocumentTypes] = useState([]);
     const [documentTypeId, setDocumentTypeId] = useState("");
+    const [departments, setDepartments] = useState([]);
+    const [departmentFilter, setDepartmentFilter] = useState("all");
+    const [signerSearchQuery, setSignerSearchQuery] = useState("");
 
     // Массовое подписание ЭЦП
     const [currentSigningIndex, setCurrentSigningIndex] = useState(0);
@@ -46,13 +50,37 @@ export default function DocumentCreate() {
     useEffect(() => {
         loadUsers();
         loadDocumentTypes();
+        loadDepartments();
     }, []);
 
     const loadUsers = async () => {
         try {
             const allUsers = await getAllUsers();
             const myId = Number(currentUser.id);
-            setUsers(allUsers.filter((u) => Number(u.id) !== myId));
+            const normalized = allUsers
+                .filter((u) => Number(u.id) !== myId)
+                .map((u) => {
+                    const dept = u?.department;
+                    const deptId =
+                        dept?.id ||
+                        dept?.documentId ||
+                        dept?.data?.id ||
+                        dept?.data?.documentId ||
+                        u?.department?.id ||
+                        null;
+                    const deptName =
+                        dept?.name ||
+                        dept?.data?.name ||
+                        dept?.attributes?.name ||
+                        "";
+
+                    return {
+                        ...u,
+                        departmentId: deptId,
+                        departmentName: deptName,
+                    };
+                });
+            setUsers(normalized);
         } catch (error) {
             console.error("Ошибка загрузки пользователей:", error);
             toast.error("Ошибка загрузки списка пользователей");
@@ -81,6 +109,31 @@ export default function DocumentCreate() {
         } catch (error) {
             console.error("Ошибка загрузки видов документов:", error);
             toast.error("Ошибка загрузки видов документов");
+        }
+    };
+
+    const loadDepartments = async () => {
+        try {
+            const data = await getDepartments();
+            const normalized = data.map((dept) => {
+                if (dept?.attributes) {
+                    return {
+                        id: dept.id || dept.attributes.documentId,
+                        name: dept.attributes.name,
+                    };
+                }
+                return {
+                    id: dept.id || dept.documentId,
+                    name: dept.name,
+                };
+            });
+            normalized.sort((a, b) =>
+                (a.name || "").localeCompare(b.name || "", "ru")
+            );
+            setDepartments(normalized);
+        } catch (error) {
+            console.error("Ошибка загрузки отделов:", error);
+            toast.error("Ошибка загрузки отделов");
         }
     };
 
@@ -311,6 +364,27 @@ export default function DocumentCreate() {
             setLoading(false);
         }
     };
+
+    const filteredUsers = users.filter((user) => {
+        if (departmentFilter !== "all") {
+            if (String(user.departmentId) !== String(departmentFilter)) {
+                return false;
+            }
+        }
+
+        if (!signerSearchQuery.trim()) return true;
+
+        const query = signerSearchQuery.trim().toLowerCase();
+        const fullName = (user.fullName || "").toLowerCase();
+        const username = (user.username || "").toLowerCase();
+        const email = (user.email || "").toLowerCase();
+
+        return (
+            fullName.includes(query) ||
+            username.includes(query) ||
+            email.includes(query)
+        );
+    });
 
     // Шаг 1: Загрузка файлов
     if (step === 1) {
@@ -712,6 +786,7 @@ export default function DocumentCreate() {
 
                             {/* Компонент ЭЦП подписи */}
                             <EdsSignature
+                                key={`eds-create-${currentSigningIndex}`}
                                 file={files[currentSigningIndex]}
                                 onSignatureComplete={
                                     handleBatchSignatureComplete
@@ -807,28 +882,76 @@ export default function DocumentCreate() {
                                 <h3 className='text-lg font-semibold text-gray-800 mb-4'>
                                     Доступные пользователи
                                 </h3>
+                                <div className='space-y-3 mb-4'>
+                                    <input
+                                        type='text'
+                                        value={signerSearchQuery}
+                                        onChange={(e) =>
+                                            setSignerSearchQuery(
+                                                e.target.value
+                                            )
+                                        }
+                                        placeholder='Поиск по ФИО, логину или email'
+                                        className='w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500'
+                                    />
+                                    <select
+                                        value={departmentFilter}
+                                        onChange={(e) =>
+                                            setDepartmentFilter(e.target.value)
+                                        }
+                                        className='w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500'>
+                                        <option value='all'>
+                                            Все отделы
+                                        </option>
+                                        {departments.map((dept) => (
+                                            <option
+                                                key={dept.id}
+                                                value={dept.id}>
+                                                {dept.name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <p className='text-xs text-gray-500'>
+                                        Найдено: {filteredUsers.length} из{" "}
+                                        {users.length}
+                                    </p>
+                                </div>
                                 <div className='space-y-2 max-h-96 overflow-y-auto'>
-                                    {users.map((user) => (
-                                        <div
-                                            key={user.id}
-                                            onClick={() =>
-                                                handleAddSigner(user)
-                                            }
-                                            className={`p-3 border rounded-lg cursor-pointer transition-colors ${
-                                                selectedSigners.find(
-                                                    (s) => s.userId === user.id
-                                                )
-                                                    ? "border-indigo-600 bg-indigo-50"
-                                                    : "border-gray-300 hover:border-indigo-400"
-                                            }`}>
-                                            <p className='font-medium text-gray-800'>
-                                                {user.fullName || user.username}
-                                            </p>
-                                            <p className='text-sm text-gray-600'>
-                                                {user.email}
-                                            </p>
+                                    {filteredUsers.length === 0 ? (
+                                        <div className='p-4 border border-gray-200 rounded-lg text-sm text-gray-500'>
+                                            Пользователи не найдены
                                         </div>
-                                    ))}
+                                    ) : (
+                                        filteredUsers.map((user) => (
+                                            <div
+                                                key={user.id}
+                                                onClick={() =>
+                                                    handleAddSigner(user)
+                                                }
+                                                className={`p-3 border rounded-lg cursor-pointer transition-colors ${
+                                                    selectedSigners.find(
+                                                        (s) =>
+                                                            s.userId === user.id
+                                                    )
+                                                        ? "border-indigo-600 bg-indigo-50"
+                                                        : "border-gray-300 hover:border-indigo-400"
+                                                }`}>
+                                                <p className='font-medium text-gray-800'>
+                                                    {user.fullName ||
+                                                        user.username}
+                                                </p>
+                                                <p className='text-sm text-gray-600'>
+                                                    {user.email}
+                                                </p>
+                                                {user.departmentName && (
+                                                    <p className='text-xs text-gray-500 mt-1'>
+                                                        Отдел:{" "}
+                                                        {user.departmentName}
+                                                    </p>
+                                                )}
+                                            </div>
+                                        ))
+                                    )}
                                 </div>
                             </div>
 
