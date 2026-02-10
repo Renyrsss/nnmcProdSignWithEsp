@@ -50,7 +50,11 @@ export default function EdsSignature({
     isCreatingDocument = false,
     isSigningDocument = false,
     signatureIndex = 0,
+    sourceIndex = null,
     userFullName = null,
+    keepNcaSession = false,
+    autoStartSigning = false,
+    autoCompleteOnSign = false,
 }) {
     const [status, setStatus] = useState("idle");
     const [message, setMessage] = useState("");
@@ -59,18 +63,25 @@ export default function EdsSignature({
     const [certInfo, setCertInfo] = useState(null);
     const [cmsBlob, setCmsBlob] = useState(null);
     const [pdfData, setPdfData] = useState(null);
+    const [signedMeta, setSignedMeta] = useState(null);
     const [fontsLoaded, setFontsLoaded] = useState(false);
     const [fontBytes, setFontBytes] = useState(null);
     const [fontBoldBytes, setFontBoldBytes] = useState(null);
     const wsRef = useRef(null);
+    const autoStartedRef = useRef(false);
+    const autoCompletedRef = useRef(false);
 
     const displayFullName = userFullName || getUserFullName();
 
-    const resetSigningState = useCallback(() => {
-        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+    const resetSigningState = useCallback((closeConnection = true) => {
+        if (
+            closeConnection &&
+            wsRef.current &&
+            wsRef.current.readyState === WebSocket.OPEN
+        ) {
             wsRef.current.close();
+            wsRef.current = null;
         }
-        wsRef.current = null;
         setStatus("idle");
         setMessage("");
         setSignedData(null);
@@ -78,6 +89,9 @@ export default function EdsSignature({
         setCertInfo(null);
         setCmsBlob(null);
         setPdfData(null);
+        setSignedMeta(null);
+        autoStartedRef.current = false;
+        autoCompletedRef.current = false;
     }, []);
 
     // Загружаем шрифты при монтировании
@@ -128,14 +142,23 @@ export default function EdsSignature({
     };
 
     React.useEffect(() => {
-        resetSigningState();
+        resetSigningState(!keepNcaSession);
 
         if (file) {
             loadFile(file);
         } else if (fileUrl) {
             loadFileFromUrl(fileUrl);
         }
-    }, [file, fileUrl, resetSigningState]);
+    }, [file, fileUrl, keepNcaSession, resetSigningState]);
+
+    React.useEffect(() => {
+        return () => {
+            if (wsRef.current) {
+                wsRef.current.close();
+                wsRef.current = null;
+            }
+        };
+    }, []);
 
     const loadFile = async (uploadedFile) => {
         try {
@@ -423,103 +446,138 @@ export default function EdsSignature({
         setMessage("Подключение к NCALayer...");
 
         try {
-            const ws = new WebSocket(NCA_LAYER_URL);
-            wsRef.current = ws;
+            const requestSourceIndex = sourceIndex;
+            const requestFileName = pdfData?.name || null;
 
-            ws.onopen = () => {
+            const sendSignRequest = (ws) => {
                 setMessage("Выберите сертификат в окне NCALayer...");
-
                 const request = {
                     module: "kz.gov.pki.knca.commonUtils",
                     method: "createCMSSignatureFromBase64",
                     args: ["PKCS12", "SIGNATURE", pdfData.base64, true],
                 };
-
                 ws.send(JSON.stringify(request));
             };
 
-            ws.onmessage = async (event) => {
-                try {
-                    const response = JSON.parse(event.data);
+            const bindHandlers = (
+                ws,
+                signedSourceIndex,
+                signedSourceFileName
+            ) => {
+                ws.onmessage = async (event) => {
+                    try {
+                        const response = JSON.parse(event.data);
 
-                    if (response.result?.version) return;
+                        if (response.result?.version) return;
 
-                    const signature =
-                        response.responseObject || response.result;
-                    const hasSignature =
-                        signature &&
-                        typeof signature === "string" &&
-                        signature.length > 500;
+                        const signature =
+                            response.responseObject || response.result;
+                        const hasSignature =
+                            signature &&
+                            typeof signature === "string" &&
+                            signature.length > 500;
 
-                    if (response.code === "200" && hasSignature) {
-                        setSignedData(signature);
+                        if (response.code === "200" && hasSignature) {
+                            setSignedData(signature);
 
-                        const parsed = parseCertFromSignature(signature);
+                            const parsed = parseCertFromSignature(signature);
 
-                        const certData = {
-                            name: parsed.name || "ЭЦП",
-                            iin: parsed.iin || "",
-                            date: new Date().toLocaleString("ru-RU"),
-                            timestamp: new Date().toISOString(),
-                        };
+                            const certData = {
+                                name: parsed.name || "ЭЦП",
+                                iin: parsed.iin || "",
+                                date: new Date().toLocaleString("ru-RU"),
+                                timestamp: new Date().toISOString(),
+                            };
 
-                        setCertInfo(certData);
+                            setCertInfo(certData);
+                            setSignedMeta({
+                                sourceIndex: signedSourceIndex,
+                                sourceFileName: signedSourceFileName,
+                            });
 
-                        // Создаём CMS blob
-                        let cleanBase64 = signature.replace(/[\r\n\s]/g, "");
-                        while (cleanBase64.length % 4 !== 0) cleanBase64 += "=";
-                        const binaryString = atob(cleanBase64);
-                        const bytes = new Uint8Array(binaryString.length);
-                        for (let i = 0; i < binaryString.length; i++) {
-                            bytes[i] = binaryString.charCodeAt(i);
+                            // Создаём CMS blob
+                            let cleanBase64 = signature.replace(
+                                /[\r\n\s]/g,
+                                ""
+                            );
+                            while (cleanBase64.length % 4 !== 0)
+                                cleanBase64 += "=";
+                            const binaryString = atob(cleanBase64);
+                            const bytes = new Uint8Array(
+                                binaryString.length
+                            );
+                            for (let i = 0; i < binaryString.length; i++) {
+                                bytes[i] = binaryString.charCodeAt(i);
+                            }
+                            const cmsFile = new Blob([bytes], {
+                                type: "application/pkcs7-signature",
+                            });
+                            setCmsBlob(cmsFile);
+
+                            try {
+                                setMessage("Создание PDF с QR-кодом...");
+                                const pdfWithQR = await createSignedPdfWithQR(
+                                    pdfData.arrayBuffer,
+                                    signature,
+                                    certData,
+                                    signatureIndex,
+                                    displayFullName
+                                );
+                                setSignedPdfBytes(pdfWithQR);
+                                setStatus("signed");
+                                setMessage("Документ успешно подписан!");
+                            } catch (e) {
+                                console.error("Ошибка PDF", e);
+                                setSignedPdfBytes(
+                                    new Uint8Array(pdfData.arrayBuffer)
+                                );
+                                setStatus("signed");
+                                setMessage(
+                                    "Документ подписан (без визуального штампа)"
+                                );
+                            }
+                        } else if (response.code === "500") {
+                            setStatus("error");
+                            setMessage("Ошибка: " + response.message);
+                            if (!keepNcaSession && wsRef.current) {
+                                wsRef.current.close();
+                                wsRef.current = null;
+                            }
                         }
-                        const cmsFile = new Blob([bytes], {
-                            type: "application/pkcs7-signature",
-                        });
-                        setCmsBlob(cmsFile);
-
-                        try {
-                            setMessage("Создание PDF с QR-кодом...");
-                            const pdfWithQR = await createSignedPdfWithQR(
-                                pdfData.arrayBuffer,
-                                signature,
-                                certData,
-                                signatureIndex,
-                                displayFullName
-                            );
-                            setSignedPdfBytes(pdfWithQR);
-                            setStatus("signed");
-                            setMessage("Документ успешно подписан!");
-                        } catch (e) {
-                            console.error("Ошибка PDF", e);
-                            setSignedPdfBytes(
-                                new Uint8Array(pdfData.arrayBuffer)
-                            );
-                            setStatus("signed");
-                            setMessage(
-                                "Документ подписан (без визуального штампа)"
-                            );
-                        }
-
-                        ws.close();
-                    } else if (response.code === "500") {
-                        setStatus("error");
-                        setMessage("Ошибка: " + response.message);
-                        ws.close();
+                    } catch (e) {
+                        console.error("Ошибка", e);
                     }
-                } catch (e) {
-                    console.error("Ошибка", e);
-                }
+                };
+
+                ws.onerror = () => {
+                    setStatus("error");
+                    setMessage(
+                        "Не удалось подключиться к NCALayer. Убедитесь, что NCALayer запущен."
+                    );
+                    if (!keepNcaSession) {
+                        wsRef.current = null;
+                    }
+                };
+
+                ws.onclose = () => {
+                    wsRef.current = null;
+                };
             };
 
-            ws.onerror = () => {
-                setStatus("error");
-                setMessage(
-                    "Не удалось подключиться к NCALayer. Убедитесь, что NCALayer запущен."
-                );
-            };
+            const existingWs = wsRef.current;
+            if (existingWs && existingWs.readyState === WebSocket.OPEN) {
+                bindHandlers(existingWs, requestSourceIndex, requestFileName);
+                sendSignRequest(existingWs);
+                return;
+            }
 
-            ws.onclose = () => {};
+            const ws = new WebSocket(NCA_LAYER_URL);
+            wsRef.current = ws;
+            bindHandlers(ws, requestSourceIndex, requestFileName);
+
+            ws.onopen = () => {
+                sendSignRequest(ws);
+            };
         } catch (error) {
             setStatus("error");
             setMessage(error.message);
@@ -531,10 +589,12 @@ export default function EdsSignature({
         fontsLoaded,
         fontBytes,
         fontBoldBytes,
+        keepNcaSession,
+        sourceIndex,
     ]);
 
-    const handleComplete = async () => {
-        if (!signedPdfBytes || !cmsBlob) return;
+    const handleComplete = useCallback(async () => {
+        if (!signedPdfBytes || !cmsBlob || !signedMeta) return;
 
         const signedPdfBlob = new Blob([signedPdfBytes], {
             type: "application/pdf",
@@ -548,9 +608,45 @@ export default function EdsSignature({
                 iin: certInfo?.iin || "",
                 date: certInfo?.date || new Date().toLocaleString("ru-RU"),
                 timestamp: certInfo?.timestamp || new Date().toISOString(),
+                sourceIndex: signedMeta.sourceIndex,
+                sourceFileName: signedMeta.sourceFileName,
             });
         }
-    };
+    }, [
+        signedPdfBytes,
+        cmsBlob,
+        signedMeta,
+        onSignatureComplete,
+        certInfo,
+        displayFullName,
+    ]);
+
+    React.useEffect(() => {
+        if (!autoStartSigning) return;
+        if (!pdfData || !fontsLoaded) return;
+        if (status !== "idle") return;
+        if (autoStartedRef.current) return;
+
+        autoStartedRef.current = true;
+        signDocument();
+    }, [autoStartSigning, pdfData, fontsLoaded, status, signDocument]);
+
+    React.useEffect(() => {
+        if (!autoCompleteOnSign) return;
+        if (status !== "signed") return;
+        if (!signedPdfBytes || !cmsBlob || !signedMeta) return;
+        if (autoCompletedRef.current) return;
+
+        autoCompletedRef.current = true;
+        handleComplete();
+    }, [
+        autoCompleteOnSign,
+        status,
+        signedPdfBytes,
+        cmsBlob,
+        signedMeta,
+        handleComplete,
+    ]);
 
     const downloadPdf = () => {
         if (!signedPdfBytes) return;

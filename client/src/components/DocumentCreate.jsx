@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { getAllUsers, uploadFile, createDocument } from "../api/documents";
 import { getDocumentTypes } from "../api/documentTypes";
 import { getDepartments } from "../api/departments";
@@ -40,6 +40,7 @@ export default function DocumentCreate() {
     const [currentSigningIndex, setCurrentSigningIndex] = useState(0);
     const [isSigningAll, setIsSigningAll] = useState(false);
     const [signedCount, setSignedCount] = useState(0);
+    const processedBatchIndexesRef = useRef(new Set());
 
     const currentUser = getCurrentUser();
     const navigate = useNavigate();
@@ -159,6 +160,7 @@ export default function DocumentCreate() {
         setSignedFiles([]);
         setCurrentSigningIndex(0);
         setSignedCount(0);
+        processedBatchIndexesRef.current.clear();
 
         toast.success(`Загружено файлов: ${pdfFiles.length}`);
     };
@@ -246,22 +248,40 @@ export default function DocumentCreate() {
         cmsBlob,
         signatureData
     ) => {
-        const newSignedFiles = [
-            ...signedFiles,
-            {
-                pdf: signedPdfBlob,
-                cms: cmsBlob,
-                signature: signatureData,
-                title: titles[currentSigningIndex],
-            },
-        ];
+        const sourceIndex = Number.isInteger(signatureData?.sourceIndex)
+            ? signatureData.sourceIndex
+            : currentSigningIndex;
 
-        setSignedFiles(newSignedFiles);
-        setSignedCount(newSignedFiles.length);
+        // Защита от двойной обработки одного и того же документа
+        if (processedBatchIndexesRef.current.has(sourceIndex)) {
+            return;
+        }
+        processedBatchIndexesRef.current.add(sourceIndex);
 
-        if (currentSigningIndex < files.length - 1) {
-            // Переходим к следующему файлу
-            setCurrentSigningIndex(currentSigningIndex + 1);
+        setSignedFiles((prev) => {
+            const expectedIndex = prev.length;
+            if (sourceIndex !== expectedIndex) {
+                // Если индекс неожиданно "прыгает", игнорируем запись,
+                // чтобы не перетереть другой документ неправильным PDF.
+                return prev;
+            }
+
+            return [
+                ...prev,
+                {
+                    pdf: signedPdfBlob,
+                    cms: cmsBlob,
+                    signature: signatureData,
+                    title: titles[sourceIndex],
+                },
+            ];
+        });
+
+        setSignedCount((prev) => Math.max(prev, sourceIndex + 1));
+
+        if (sourceIndex < files.length - 1) {
+            // Переходим к следующему файлу строго по индексу источника подписи
+            setCurrentSigningIndex(sourceIndex + 1);
         } else {
             // Все файлы подписаны
             setIsSigningAll(false);
@@ -786,13 +806,16 @@ export default function DocumentCreate() {
 
                             {/* Компонент ЭЦП подписи */}
                             <EdsSignature
-                                key={`eds-create-${currentSigningIndex}`}
                                 file={files[currentSigningIndex]}
                                 onSignatureComplete={
                                     handleBatchSignatureComplete
                                 }
                                 isCreatingDocument={true}
                                 signatureIndex={0}
+                                sourceIndex={currentSigningIndex}
+                                keepNcaSession={isMultipleFiles}
+                                autoStartSigning={isMultipleFiles}
+                                autoCompleteOnSign={isMultipleFiles}
                             />
 
                             {/* Кнопка назад */}
@@ -802,6 +825,7 @@ export default function DocumentCreate() {
                                     setSignedFiles([]);
                                     setCurrentSigningIndex(0);
                                     setSignedCount(0);
+                                    processedBatchIndexesRef.current.clear();
                                 }}
                                 className='w-full mt-4 py-2 px-6 rounded-lg font-semibold bg-gray-200 hover:bg-gray-300 text-gray-700'>
                                 ← Назад к выбору типа подписи
@@ -1036,6 +1060,7 @@ export default function DocumentCreate() {
                                     setSignedFiles([]);
                                     setCurrentSigningIndex(0);
                                     setSignedCount(0);
+                                    processedBatchIndexesRef.current.clear();
                                 }}
                                 className='flex-1 py-3 px-6 rounded-lg font-semibold bg-gray-200 hover:bg-gray-300 text-gray-700'>
                                 Назад
