@@ -39,7 +39,7 @@ export default function DocumentList({ type = "my" }) {
     const [currentPage, setCurrentPage] = useState(1);
     const [dateFrom, setDateFrom] = useState("");
     const [dateTo, setDateTo] = useState("");
-    const [showFilters, setShowFilters] = useState(false);
+    const [showFilters, setShowFilters] = useState(true);
     const [departments, setDepartments] = useState([]);
     const [departmentFilter, setDepartmentFilter] = useState("all");
     const [signerQuery, setSignerQuery] = useState("");
@@ -86,10 +86,8 @@ export default function DocumentList({ type = "my" }) {
     }, [type]);
 
     useEffect(() => {
-        if (type === "my") {
-            loadDepartments();
-            loadDocumentTypes();
-        }
+        loadDepartments();
+        loadDocumentTypes();
     }, [type]);
 
     const loadDocuments = async () => {
@@ -194,47 +192,45 @@ export default function DocumentList({ type = "my" }) {
             });
         }
 
-        if (type === "my") {
-            if (departmentFilter !== "all") {
-                result = result.filter((doc) => {
-                    const dept = doc.creator?.department;
-                    const deptData = dept?.data ? dept.data : dept;
-                    const deptId =
-                        deptData?.id ||
-                        deptData?.documentId ||
-                        deptData?.attributes?.documentId;
-                    return String(deptId) === String(departmentFilter);
-                });
-            }
+        if (departmentFilter !== "all") {
+            result = result.filter((doc) => {
+                const dept = doc.creator?.department;
+                const deptData = dept?.data ? dept.data : dept;
+                const deptId =
+                    deptData?.id ||
+                    deptData?.documentId ||
+                    deptData?.attributes?.documentId;
+                return String(deptId) === String(departmentFilter);
+            });
+        }
 
-            if (documentTypeFilter !== "all") {
-                result = result.filter((doc) => {
-                    const docType = doc.documentType;
-                    const docTypeData = docType?.data ? docType.data : docType;
-                    const docTypeId =
-                        docTypeData?.id ||
-                        docTypeData?.documentId ||
-                        docTypeData?.attributes?.documentId;
-                    return (
-                        String(docTypeId) === String(documentTypeFilter)
-                    );
-                });
-            }
+        if (documentTypeFilter !== "all") {
+            result = result.filter((doc) => {
+                const docType = doc.documentType;
+                const docTypeData = docType?.data ? docType.data : docType;
+                const docTypeId =
+                    docTypeData?.id ||
+                    docTypeData?.documentId ||
+                    docTypeData?.attributes?.documentId;
+                return (
+                    String(docTypeId) === String(documentTypeFilter)
+                );
+            });
+        }
 
-            const query = signerQuery.trim().toLowerCase();
-            if (query) {
-                result = result.filter((doc) => {
-                    const history = doc.signatureHistory || [];
-                    const signers = doc.signers || [];
-                    const hasInHistory = history.some((sig) =>
-                        (sig.userName || "").toLowerCase().includes(query)
-                    );
-                    const hasInSigners = signers.some((sig) =>
-                        (sig.userName || "").toLowerCase().includes(query)
-                    );
-                    return hasInHistory || hasInSigners;
-                });
-            }
+        const query = signerQuery.trim().toLowerCase();
+        if (query) {
+            result = result.filter((doc) => {
+                const history = doc.signatureHistory || [];
+                const signers = doc.signers || [];
+                const hasInHistory = history.some((sig) =>
+                    (sig.userName || "").toLowerCase().includes(query)
+                );
+                const hasInSigners = signers.some((sig) =>
+                    (sig.userName || "").toLowerCase().includes(query)
+                );
+                return hasInHistory || hasInSigners;
+            });
         }
 
         setFilteredDocuments(result);
@@ -448,9 +444,9 @@ export default function DocumentList({ type = "my" }) {
         filter !== "all" ||
         dateFrom ||
         dateTo ||
-        (type === "my" && departmentFilter !== "all") ||
-        (type === "my" && signerQuery.trim().length > 0) ||
-        (type === "my" && documentTypeFilter !== "all");
+        departmentFilter !== "all" ||
+        signerQuery.trim().length > 0 ||
+        documentTypeFilter !== "all";
     const signableDocsCount = getSignableDocuments().length;
 
     return (
@@ -552,94 +548,86 @@ export default function DocumentList({ type = "my" }) {
                 {showFilters && (
                     <div className='mb-6 p-4 bg-gray-50 rounded-xl'>
                         <div className='flex flex-wrap items-end gap-4'>
-                            {type === "my" && (
-                                <div>
-                                    <label className='block text-sm font-medium text-gray-700 mb-1'>
-                                        Статус
-                                    </label>
-                                    <select
-                                        value={filter}
-                                        onChange={(e) =>
-                                            setFilter(e.target.value)
-                                        }
-                                        className='px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent'>
-                                        <option value='all'>Все</option>
-                                        <option value='in_progress'>
-                                            В процессе
-                                        </option>
-                                        <option value='completed'>
-                                            Завершённые
-                                        </option>
-                                        <option value='cancelled'>
-                                            Отменённые
-                                        </option>
-                                        <option value='revision'>
-                                            На корректировке
-                                        </option>
-                                    </select>
-                                </div>
-                            )}
+                            <div>
+                                <label className='block text-sm font-medium text-gray-700 mb-1'>
+                                    Статус
+                                </label>
+                                <select
+                                    value={filter}
+                                    onChange={(e) =>
+                                        setFilter(e.target.value)
+                                    }
+                                    className='px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent'>
+                                    <option value='all'>Все</option>
+                                    <option value='in_progress'>
+                                        В процессе
+                                    </option>
+                                    <option value='completed'>
+                                        Завершённые
+                                    </option>
+                                    <option value='cancelled'>
+                                        Отменённые
+                                    </option>
+                                    <option value='revision'>
+                                        На корректировке
+                                    </option>
+                                </select>
+                            </div>
 
-                            {type === "my" && (
-                                <div>
-                                    <label className='block text-sm font-medium text-gray-700 mb-1'>
-                                        Отдел
-                                    </label>
-                                    <select
-                                        value={departmentFilter}
-                                        onChange={(e) =>
-                                            setDepartmentFilter(e.target.value)
-                                        }
-                                        className='px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent'>
-                                        <option value='all'>Все</option>
-                                        {departments.map((dept) => (
-                                            <option key={dept.id} value={dept.id}>
-                                                {dept.name}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
-                            )}
+                            <div>
+                                <label className='block text-sm font-medium text-gray-700 mb-1'>
+                                    Отдел
+                                </label>
+                                <select
+                                    value={departmentFilter}
+                                    onChange={(e) =>
+                                        setDepartmentFilter(e.target.value)
+                                    }
+                                    className='px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent'>
+                                    <option value='all'>Все</option>
+                                    {departments.map((dept) => (
+                                        <option key={dept.id} value={dept.id}>
+                                            {dept.name}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
 
-                            {type === "my" && (
-                                <div>
-                                    <label className='block text-sm font-medium text-gray-700 mb-1'>
-                                        Вид документа
-                                    </label>
-                                    <select
-                                        value={documentTypeFilter}
-                                        onChange={(e) =>
-                                            setDocumentTypeFilter(
-                                                e.target.value
-                                            )
-                                        }
-                                        className='px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent'>
-                                        <option value='all'>Все</option>
-                                        {documentTypes.map((type) => (
-                                            <option key={type.id} value={type.id}>
-                                                {type.name}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
-                            )}
+                            <div>
+                                <label className='block text-sm font-medium text-gray-700 mb-1'>
+                                    Вид документа
+                                </label>
+                                <select
+                                    value={documentTypeFilter}
+                                    onChange={(e) =>
+                                        setDocumentTypeFilter(
+                                            e.target.value
+                                        )
+                                    }
+                                    className='px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent'>
+                                    <option value='all'>Все</option>
+                                    {documentTypes.map((type) => (
+                                        <option key={type.id} value={type.id}>
+                                            {type.name}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
 
-                            {type === "my" && (
-                                <div className='min-w-[240px]'>
-                                    <label className='block text-sm font-medium text-gray-700 mb-1'>
-                                        Подписант
-                                    </label>
-                                    <input
-                                        type='text'
-                                        value={signerQuery}
-                                        onChange={(e) =>
-                                            setSignerQuery(e.target.value)
-                                        }
-                                        placeholder='ФИО подписанта'
-                                        className='px-3 py-2 w-full border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent'
-                                    />
-                                </div>
-                            )}
+                            <div className='min-w-[240px]'>
+                                <label className='block text-sm font-medium text-gray-700 mb-1'>
+                                    Подписант
+                                </label>
+                                <input
+                                    type='text'
+                                    value={signerQuery}
+                                    onChange={(e) =>
+                                        setSignerQuery(e.target.value)
+                                    }
+                                    placeholder='ФИО подписанта'
+                                    className='px-3 py-2 w-full border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent'
+                                />
+                            </div>
 
                             <div>
                                 <label className='block text-sm font-medium text-gray-700 mb-1'>
