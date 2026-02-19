@@ -45,6 +45,7 @@ export default function DocumentList({ type = "my" }) {
     const [signerQuery, setSignerQuery] = useState("");
     const [documentTypes, setDocumentTypes] = useState([]);
     const [documentTypeFilter, setDocumentTypeFilter] = useState("all");
+    const [titleQuery, setTitleQuery] = useState("");
 
     // Модальное окно
     const [showCancelModal, setShowCancelModal] = useState(false);
@@ -73,11 +74,12 @@ export default function DocumentList({ type = "my" }) {
         departmentFilter,
         signerQuery,
         documentTypeFilter,
+        titleQuery,
     ]);
 
     useEffect(() => {
         setCurrentPage(1);
-    }, [filter, dateFrom, dateTo, departmentFilter, signerQuery, documentTypeFilter]);
+    }, [filter, dateFrom, dateTo, departmentFilter, signerQuery, documentTypeFilter, titleQuery]);
 
     // Сброс выбора при смене типа
     useEffect(() => {
@@ -174,6 +176,13 @@ export default function DocumentList({ type = "my" }) {
             result = result.filter((doc) => doc.status === filter);
         }
 
+        const titleQ = titleQuery.trim().toLowerCase();
+        if (titleQ) {
+            result = result.filter((doc) =>
+                (doc.title || "").toLowerCase().includes(titleQ)
+            );
+        }
+
         if (dateFrom) {
             const fromDate = new Date(dateFrom);
             fromDate.setHours(0, 0, 0, 0);
@@ -243,6 +252,7 @@ export default function DocumentList({ type = "my" }) {
         setDepartmentFilter("all");
         setSignerQuery("");
         setDocumentTypeFilter("all");
+        setTitleQuery("");
     };
 
     const handleCancelClick = (doc) => {
@@ -446,7 +456,8 @@ export default function DocumentList({ type = "my" }) {
         dateTo ||
         departmentFilter !== "all" ||
         signerQuery.trim().length > 0 ||
-        documentTypeFilter !== "all";
+        documentTypeFilter !== "all" ||
+        titleQuery.trim().length > 0;
     const signableDocsCount = getSignableDocuments().length;
 
     return (
@@ -548,6 +559,21 @@ export default function DocumentList({ type = "my" }) {
                 {showFilters && (
                     <div className='mb-6 p-4 bg-gray-50 rounded-xl'>
                         <div className='flex flex-wrap items-end gap-4'>
+                            <div className='min-w-[240px]'>
+                                <label className='block text-sm font-medium text-gray-700 mb-1'>
+                                    Название документа
+                                </label>
+                                <input
+                                    type='text'
+                                    value={titleQuery}
+                                    onChange={(e) =>
+                                        setTitleQuery(e.target.value)
+                                    }
+                                    placeholder='Поиск по названию...'
+                                    className='px-3 py-2 w-full border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent'
+                                />
+                            </div>
+
                             <div>
                                 <label className='block text-sm font-medium text-gray-700 mb-1'>
                                     Статус
