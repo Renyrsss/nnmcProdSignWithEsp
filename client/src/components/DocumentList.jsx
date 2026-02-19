@@ -46,6 +46,7 @@ export default function DocumentList({ type = "my" }) {
     const [documentTypes, setDocumentTypes] = useState([]);
     const [documentTypeFilter, setDocumentTypeFilter] = useState("all");
     const [titleQuery, setTitleQuery] = useState("");
+    const [goToPageInput, setGoToPageInput] = useState("");
 
     // Модальное окно
     const [showCancelModal, setShowCancelModal] = useState(false);
@@ -393,6 +394,99 @@ export default function DocumentList({ type = "my" }) {
         }
 
         return pages;
+    };
+
+    const handleGoToPage = (e) => {
+        e.preventDefault();
+        const page = parseInt(goToPageInput, 10);
+        if (page >= 1 && page <= totalPages) {
+            goToPage(page);
+            setGoToPageInput("");
+        }
+    };
+
+    const renderPagination = (position) => {
+        if (totalPages <= 1) return null;
+        const borderClass =
+            position === "top"
+                ? "mb-4 pb-4 border-b border-gray-200"
+                : "mt-6 pt-6 border-t border-gray-200";
+
+        return (
+            <div className={`flex items-center justify-between ${borderClass} flex-wrap gap-3`}>
+                <div className='text-sm text-gray-600'>
+                    Показано {startIndex + 1}-
+                    {Math.min(endIndex, filteredDocuments.length)} из{" "}
+                    {filteredDocuments.length}
+                </div>
+
+                <div className='flex items-center gap-1'>
+                    <button
+                        onClick={() => goToPage(currentPage - 1)}
+                        disabled={currentPage === 1}
+                        className={`p-2 rounded-lg transition-colors ${
+                            currentPage === 1
+                                ? "text-gray-300 cursor-not-allowed"
+                                : "text-gray-600 hover:bg-gray-100"
+                        }`}>
+                        <ChevronLeft className='w-5 h-5' />
+                    </button>
+
+                    {getPageNumbers().map((page, idx) => (
+                        <button
+                            key={idx}
+                            onClick={() =>
+                                typeof page === "number" && goToPage(page)
+                            }
+                            disabled={page === "..."}
+                            className={`min-w-[40px] h-10 rounded-lg text-sm font-medium transition-colors ${
+                                page === currentPage
+                                    ? "bg-indigo-600 text-white"
+                                    : page === "..."
+                                    ? "text-gray-400 cursor-default"
+                                    : "text-gray-600 hover:bg-gray-100"
+                            }`}>
+                            {page}
+                        </button>
+                    ))}
+
+                    <button
+                        onClick={() => goToPage(currentPage + 1)}
+                        disabled={currentPage === totalPages}
+                        className={`p-2 rounded-lg transition-colors ${
+                            currentPage === totalPages
+                                ? "text-gray-300 cursor-not-allowed"
+                                : "text-gray-600 hover:bg-gray-100"
+                        }`}>
+                        <ChevronRight className='w-5 h-5' />
+                    </button>
+                </div>
+
+                <div className='flex items-center gap-2'>
+                    <span className='text-sm text-gray-600'>
+                        Стр. {currentPage} из {totalPages}
+                    </span>
+                    <form
+                        onSubmit={handleGoToPage}
+                        className='flex items-center gap-1'>
+                        <input
+                            type='number'
+                            min={1}
+                            max={totalPages}
+                            value={goToPageInput}
+                            onChange={(e) => setGoToPageInput(e.target.value)}
+                            placeholder='№'
+                            className='w-16 px-2 py-1.5 border border-gray-300 rounded-lg text-sm text-center focus:ring-2 focus:ring-indigo-500 focus:border-transparent'
+                        />
+                        <button
+                            type='submit'
+                            className='px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors'>
+                            Перейти
+                        </button>
+                    </form>
+                </div>
+            </div>
+        );
     };
 
     const getStatusBadge = (status) => {
@@ -776,6 +870,7 @@ export default function DocumentList({ type = "my" }) {
                     </div>
                 ) : (
                     <>
+                        {renderPagination("top")}
                         <div className='space-y-4'>
                             {currentDocuments.map((doc) => {
                                 const isSignable =
@@ -955,69 +1050,7 @@ export default function DocumentList({ type = "my" }) {
                             })}
                         </div>
 
-                        {totalPages > 1 && (
-                            <div className='flex items-center justify-between mt-6 pt-6 border-t border-gray-200'>
-                                <div className='text-sm text-gray-600'>
-                                    Показано {startIndex + 1}-
-                                    {Math.min(
-                                        endIndex,
-                                        filteredDocuments.length
-                                    )}{" "}
-                                    из {filteredDocuments.length}
-                                </div>
-
-                                <div className='flex items-center gap-1'>
-                                    <button
-                                        onClick={() =>
-                                            goToPage(currentPage - 1)
-                                        }
-                                        disabled={currentPage === 1}
-                                        className={`p-2 rounded-lg transition-colors ${
-                                            currentPage === 1
-                                                ? "text-gray-300 cursor-not-allowed"
-                                                : "text-gray-600 hover:bg-gray-100"
-                                        }`}>
-                                        <ChevronLeft className='w-5 h-5' />
-                                    </button>
-
-                                    {getPageNumbers().map((page, idx) => (
-                                        <button
-                                            key={idx}
-                                            onClick={() =>
-                                                typeof page === "number" &&
-                                                goToPage(page)
-                                            }
-                                            disabled={page === "..."}
-                                            className={`min-w-[40px] h-10 rounded-lg text-sm font-medium transition-colors ${
-                                                page === currentPage
-                                                    ? "bg-indigo-600 text-white"
-                                                    : page === "..."
-                                                    ? "text-gray-400 cursor-default"
-                                                    : "text-gray-600 hover:bg-gray-100"
-                                            }`}>
-                                            {page}
-                                        </button>
-                                    ))}
-
-                                    <button
-                                        onClick={() =>
-                                            goToPage(currentPage + 1)
-                                        }
-                                        disabled={currentPage === totalPages}
-                                        className={`p-2 rounded-lg transition-colors ${
-                                            currentPage === totalPages
-                                                ? "text-gray-300 cursor-not-allowed"
-                                                : "text-gray-600 hover:bg-gray-100"
-                                        }`}>
-                                        <ChevronRight className='w-5 h-5' />
-                                    </button>
-                                </div>
-
-                                <div className='text-sm text-gray-600'>
-                                    Страница {currentPage} из {totalPages}
-                                </div>
-                            </div>
-                        )}
+                        {renderPagination("bottom")}
                     </>
                 )}
             </div>
