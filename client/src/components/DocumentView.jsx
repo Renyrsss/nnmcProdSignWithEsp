@@ -5,6 +5,8 @@ import {
     getPendingDocuments,
     updateDocument,
     uploadFile,
+    getDocumentFileUrl,
+    presignDocumentFile,
 } from "../api/documents";
 import { getCurrentUser } from "../api/auth";
 import {
@@ -45,16 +47,22 @@ export default function DocumentView() {
     const [recallComment, setRecallComment] = useState("");
     const [resendFile, setResendFile] = useState(null);
     const [actionLoading, setActionLoading] = useState(false);
+    const [signFileUrl, setSignFileUrl] = useState(null);
 
     const currentUser = getCurrentUser();
 
-    const resolveFileUrl = (file) => {
-        const directUrl = file?.url;
-        const nestedUrl = file?.data?.attributes?.url || file?.data?.url;
-        return directUrl || nestedUrl || null;
+    // Extracts the MinIO object key from a full MinIO URL (removes endpoint+bucket prefix)
+    const extractMinioKey = (url) => {
+        try {
+            const parsed = new URL(url);
+            const parts = parsed.pathname.split("/").filter(Boolean);
+            return parts.slice(1).join("/"); // skip bucket segment
+        } catch {
+            return null;
+        }
     };
 
-    // Supports both MinIO absolute URLs and legacy relative /uploads/... paths
+    // Used for legacy relative /uploads/... CMS file paths
     const buildFileUrl = (fileUrl) => {
         if (!fileUrl) return null;
         if (fileUrl.startsWith("http://") || fileUrl.startsWith("https://")) {
@@ -63,39 +71,22 @@ export default function DocumentView() {
         return `${API_BASE}${fileUrl}`;
     };
 
-    const resolveDocumentFileUrl = (doc) => {
-        return (
-            resolveFileUrl(doc?.currentFile) ||
-            resolveFileUrl(doc?.originalFile) ||
-            null
-        );
-    };
-
     useEffect(() => {
         loadDocument();
     }, [id]);
 
     useEffect(() => {
         if (!documentData) return;
-        const fileUrl = resolveDocumentFileUrl(documentData);
-        if (!fileUrl) return;
+        let cancelled = false;
 
-        let revoked = false;
-        fetch(buildFileUrl(fileUrl))
-            .then((res) => res.blob())
-            .then((blob) => {
-                if (revoked) return;
-                const url = URL.createObjectURL(blob);
-                setPdfPreviewUrl(url);
+        getDocumentFileUrl(documentData.documentId)
+            .then((url) => {
+                if (!cancelled) setPdfPreviewUrl(url);
             })
             .catch((err) => console.error("PDF preview load error:", err));
 
         return () => {
-            revoked = true;
-            setPdfPreviewUrl((prev) => {
-                if (prev) URL.revokeObjectURL(prev);
-                return null;
-            });
+            cancelled = true;
         };
     }, [documentData]);
 
@@ -231,9 +222,8 @@ export default function DocumentView() {
 
     const handleDownload = async () => {
         try {
-            const fileUrl = resolveDocumentFileUrl(documentData);
-
-            const response = await fetch(buildFileUrl(fileUrl));
+            const presignedUrl = await getDocumentFileUrl(documentData.documentId);
+            const response = await fetch(presignedUrl);
             const blob = await response.blob();
             const url = window.URL.createObjectURL(blob);
             const link = window.document.createElement("a");
@@ -249,18 +239,15 @@ export default function DocumentView() {
         }
     };
 
-    const handleStartSigning = () => {
-        const fileUrl = resolveDocumentFileUrl(documentData);
-        if (!fileUrl) {
-            console.error("Ошибка: не удалось получить файл документа", {
-                documentId: documentData?.id,
-                currentFile: documentData?.currentFile,
-                originalFile: documentData?.originalFile,
-            });
+    const handleStartSigning = async () => {
+        try {
+            const url = await getDocumentFileUrl(documentData.documentId);
+            setSignFileUrl(url);
+            setShowSignature(true);
+        } catch (err) {
+            console.error("Ошибка получения файла:", err);
             toast.error("Ошибка: не удалось получить файл документа");
-            return;
         }
-        setShowSignature(true);
     };
 
     // Скачивание CMS файла по URL
@@ -271,12 +258,24 @@ export default function DocumentView() {
                 return;
             }
 
-            const fullUrl = buildFileUrl(cmsFileUrl);
-
-            const response = await fetch(fullUrl);
-            if (!response.ok) {
-                throw new Error("Ошибка загрузки файла");
+            let fetchUrl;
+            if (
+                cmsFileUrl.startsWith("http://") ||
+                cmsFileUrl.startsWith("https://")
+            ) {
+                // MinIO file — generate pre-signed URL via backend
+                const key = extractMinioKey(cmsFileUrl);
+                fetchUrl = await presignDocumentFile(
+                    documentData.documentId,
+                    key
+                );
+            } else {
+                // Legacy relative path — proxy through Strapi
+                fetchUrl = buildFileUrl(cmsFileUrl);
             }
+
+            const response = await fetch(fetchUrl);
+            if (!response.ok) throw new Error("Ошибка загрузки файла");
 
             const blob = await response.blob();
             const url = window.URL.createObjectURL(blob);
@@ -502,18 +501,14 @@ export default function DocumentView() {
     }
 
     if (showSignature && canSign) {
-        const fileUrl = resolveDocumentFileUrl(documentData);
-
-        if (!fileUrl) {
-            return null;
-        }
+        if (!signFileUrl) return null;
 
         const signedCount = documentData.signatureHistory?.length || 0;
 
         return (
             <DocumentSignatureApp
                 documentId={documentData.id}
-                preloadedFileUrl={buildFileUrl(fileUrl)}
+                preloadedFileUrl={signFileUrl}
                 onSignatureComplete={handleSignatureComplete}
                 isSigningDocument={true}
                 signatureType={documentData.signatureType}

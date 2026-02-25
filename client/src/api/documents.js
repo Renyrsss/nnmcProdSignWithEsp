@@ -143,6 +143,26 @@ export const getAllUsers = async () => {
     }
 };
 
+// Получить pre-signed URL для currentFile / originalFile документа (15 мин)
+export const getDocumentFileUrl = async (documentId, fileType = "current") => {
+    const token = getToken();
+    const response = await axios.get(
+        `${API_URL}/documents/${documentId}/file-url?file=${fileType}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+    );
+    return response.data.url;
+};
+
+// Получить pre-signed URL для произвольного MinIO-файла по ключу объекта (CMS и др.)
+export const presignDocumentFile = async (documentId, key) => {
+    const token = getToken();
+    const response = await axios.get(
+        `${API_URL}/documents/${documentId}/presign?key=${encodeURIComponent(key)}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+    );
+    return response.data.url;
+};
+
 // Отозвать документ (Strapi v5 использует documentId в URL)
 export const cancelDocument = async (documentId) => {
     const token = getToken();

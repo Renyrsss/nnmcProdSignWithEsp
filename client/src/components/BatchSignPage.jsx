@@ -5,6 +5,7 @@ import {
     getPendingDocuments,
     updateDocument,
     uploadFile,
+    getDocumentFileUrl,
 } from "../api/documents";
 import { getCurrentUser } from "../api/auth";
 import { PDFDocument, rgb } from "pdf-lib";
@@ -21,7 +22,6 @@ import {
 } from "lucide-react";
 import { useToast } from "./Toast";
 
-const API_BASE = import.meta.env.VITE_API_BASE;
 const NCA_LAYER_URL = "wss://127.0.0.1:13579/";
 
 const FONT_URL =
@@ -38,28 +38,6 @@ const getUserFullName = () => {
     return "";
 };
 
-const resolveFileUrl = (file) => {
-    const directUrl = file?.url;
-    const nestedUrl = file?.data?.attributes?.url || file?.data?.url;
-    return directUrl || nestedUrl || null;
-};
-
-const resolveDocumentFileUrl = (doc) => {
-    return (
-        resolveFileUrl(doc?.currentFile) ||
-        resolveFileUrl(doc?.originalFile) ||
-        null
-    );
-};
-
-// Supports both MinIO absolute URLs and legacy relative /uploads/... paths
-const buildFileUrl = (fileUrl) => {
-    if (!fileUrl) return null;
-    if (fileUrl.startsWith("http://") || fileUrl.startsWith("https://")) {
-        return fileUrl;
-    }
-    return `${API_BASE}${fileUrl}`;
-};
 
 const formatShortName = (fullName) => {
     if (!fullName) return "";
@@ -153,10 +131,10 @@ export default function BatchSignPage() {
             const files = [];
             for (const doc of selectedDocs) {
                 try {
-                    const fileUrl = resolveDocumentFileUrl(doc);
+                    const presignedUrl = await getDocumentFileUrl(doc.documentId);
 
-                    if (fileUrl) {
-                        const response = await fetch(buildFileUrl(fileUrl));
+                    if (presignedUrl) {
+                        const response = await fetch(presignedUrl);
                         const arrayBuffer = await response.arrayBuffer();
 
                         // Проверяем что это действительно PDF (начинается с %PDF)
