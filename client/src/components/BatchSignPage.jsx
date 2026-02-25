@@ -52,6 +52,15 @@ const resolveDocumentFileUrl = (doc) => {
     );
 };
 
+// Supports both MinIO absolute URLs and legacy relative /uploads/... paths
+const buildFileUrl = (fileUrl) => {
+    if (!fileUrl) return null;
+    if (fileUrl.startsWith("http://") || fileUrl.startsWith("https://")) {
+        return fileUrl;
+    }
+    return `${API_BASE}${fileUrl}`;
+};
+
 const formatShortName = (fullName) => {
     if (!fullName) return "";
     const parts = fullName.trim().split(/\s+/);
@@ -147,7 +156,7 @@ export default function BatchSignPage() {
                     const fileUrl = resolveDocumentFileUrl(doc);
 
                     if (fileUrl) {
-                        const response = await fetch(`${API_BASE}${fileUrl}`);
+                        const response = await fetch(buildFileUrl(fileUrl));
                         const arrayBuffer = await response.arrayBuffer();
 
                         // Проверяем что это действительно PDF (начинается с %PDF)
