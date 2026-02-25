@@ -263,14 +263,21 @@ export default function DocumentView() {
                 cmsFileUrl.startsWith("http://") ||
                 cmsFileUrl.startsWith("https://")
             ) {
-                // MinIO file — generate pre-signed URL via backend
+                // MinIO absolute URL — extract key and presign
                 const key = extractMinioKey(cmsFileUrl);
                 fetchUrl = await presignDocumentFile(
                     documentData.documentId,
                     key
                 );
+            } else if (cmsFileUrl.startsWith("/uploads/")) {
+                // Legacy /uploads/hash.ext path — file was migrated to MinIO
+                // The MinIO key is the same as the filename (Strapi stores as {hash}{ext})
+                const key = cmsFileUrl.replace(/^\/uploads\//, "");
+                fetchUrl = await presignDocumentFile(
+                    documentData.documentId,
+                    key
+                );
             } else {
-                // Legacy relative path — proxy through Strapi
                 fetchUrl = buildFileUrl(cmsFileUrl);
             }
 
