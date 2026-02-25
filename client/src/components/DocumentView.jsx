@@ -54,6 +54,15 @@ export default function DocumentView() {
         return directUrl || nestedUrl || null;
     };
 
+    // Supports both MinIO absolute URLs and legacy relative /uploads/... paths
+    const buildFileUrl = (fileUrl) => {
+        if (!fileUrl) return null;
+        if (fileUrl.startsWith("http://") || fileUrl.startsWith("https://")) {
+            return fileUrl;
+        }
+        return `${API_BASE}${fileUrl}`;
+    };
+
     const resolveDocumentFileUrl = (doc) => {
         return (
             resolveFileUrl(doc?.currentFile) ||
@@ -72,7 +81,7 @@ export default function DocumentView() {
         if (!fileUrl) return;
 
         let revoked = false;
-        fetch(`${API_BASE}${fileUrl}`)
+        fetch(buildFileUrl(fileUrl))
             .then((res) => res.blob())
             .then((blob) => {
                 if (revoked) return;
@@ -224,7 +233,7 @@ export default function DocumentView() {
         try {
             const fileUrl = resolveDocumentFileUrl(documentData);
 
-            const response = await fetch(`${API_BASE}${fileUrl}`);
+            const response = await fetch(buildFileUrl(fileUrl));
             const blob = await response.blob();
             const url = window.URL.createObjectURL(blob);
             const link = window.document.createElement("a");
@@ -262,9 +271,7 @@ export default function DocumentView() {
                 return;
             }
 
-            const fullUrl = cmsFileUrl.startsWith("http")
-                ? cmsFileUrl
-                : `${API_BASE}${cmsFileUrl}`;
+            const fullUrl = buildFileUrl(cmsFileUrl);
 
             const response = await fetch(fullUrl);
             if (!response.ok) {
@@ -506,7 +513,7 @@ export default function DocumentView() {
         return (
             <DocumentSignatureApp
                 documentId={documentData.id}
-                preloadedFileUrl={`${API_BASE}${fileUrl}`}
+                preloadedFileUrl={buildFileUrl(fileUrl)}
                 onSignatureComplete={handleSignatureComplete}
                 isSigningDocument={true}
                 signatureType={documentData.signatureType}
