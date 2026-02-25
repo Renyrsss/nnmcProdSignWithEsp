@@ -40,9 +40,39 @@ async function migrate() {
     console.log("Connected to database\n");
 
     try {
+        // Find the correct table name for uploads
+        const tablesResult = await client.query(`
+            SELECT table_name FROM information_schema.tables
+            WHERE table_schema = 'public'
+            AND table_name ILIKE '%file%'
+            ORDER BY table_name
+        `);
+        console.log("Tables with 'file' in name:", tablesResult.rows.map(r => r.table_name).join(", "));
+
+        // Try possible table names used by Strapi v4/v5
+        const candidates = ["upload_files", "files", "strapi_files", "up_files"];
+        let tableName = null;
+        for (const t of candidates) {
+            const exists = await client.query(
+                `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=$1)`,
+                [t]
+            );
+            if (exists.rows[0].exists) {
+                tableName = t;
+                break;
+            }
+        }
+
+        if (!tableName) {
+            console.error("Could not find upload files table. Available tables with 'file':", tablesResult.rows.map(r => r.table_name));
+            return;
+        }
+
+        console.log(`Using table: ${tableName}\n`);
+
         // Find all files with old relative URLs
         const { rows } = await client.query(
-            "SELECT id, hash, ext, url, name FROM upload_files WHERE url LIKE '/uploads/%'"
+            `SELECT id, hash, ext, url, name FROM ${tableName} WHERE url LIKE '/uploads/%'`
         );
 
         console.log(`Found ${rows.length} file(s) with old /uploads/ URLs`);
@@ -64,7 +94,7 @@ async function migrate() {
 
             if (!DRY_RUN) {
                 await client.query(
-                    "UPDATE upload_files SET url = $1 WHERE id = $2",
+                    `UPDATE ${tableName} SET url = $1 WHERE id = $2`,
                     [newUrl, file.id]
                 );
                 updated++;
