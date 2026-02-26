@@ -62,6 +62,15 @@ export const getUserFullName = () => {
     return user?.fullName || "";
 };
 
+export const getMe = async () => {
+    const token = getToken();
+    const response = await fetch(
+        `${API_URL}/users/me?populate=department`,
+        { headers: { Authorization: `Bearer ${token}` } }
+    );
+    return response.json();
+};
+
 export const updateUserProfile = async (fullName) => {
     const token = getToken();
     const user = getCurrentUser();

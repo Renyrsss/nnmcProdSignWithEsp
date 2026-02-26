@@ -6,6 +6,7 @@ import {
 } from "../api/documents";
 import { getDepartments } from "../api/departments";
 import { getDocumentTypes } from "../api/documentTypes";
+import { getSubdivisions } from "../api/subdivisions";
 import { getCurrentUser } from "../api/auth";
 import {
     FileText,
@@ -46,6 +47,8 @@ export default function DocumentList({ type = "my" }) {
     const [documentTypes, setDocumentTypes] = useState([]);
     const [documentTypeFilter, setDocumentTypeFilter] = useState("all");
     const [titleQuery, setTitleQuery] = useState("");
+    const [subdivisions, setSubdivisions] = useState([]);
+    const [subdivisionFilter, setSubdivisionFilter] = useState("all");
     const [goToPageInput, setGoToPageInput] = useState("");
 
     // Модальное окно
@@ -76,11 +79,12 @@ export default function DocumentList({ type = "my" }) {
         signerQuery,
         documentTypeFilter,
         titleQuery,
+        subdivisionFilter,
     ]);
 
     useEffect(() => {
         setCurrentPage(1);
-    }, [filter, dateFrom, dateTo, departmentFilter, signerQuery, documentTypeFilter, titleQuery]);
+    }, [filter, dateFrom, dateTo, departmentFilter, signerQuery, documentTypeFilter, titleQuery, subdivisionFilter]);
 
     // Сброс выбора при смене типа
     useEffect(() => {
@@ -92,6 +96,24 @@ export default function DocumentList({ type = "my" }) {
         loadDepartments();
         loadDocumentTypes();
     }, [type]);
+
+    useEffect(() => {
+        setSubdivisionFilter("all");
+        if (departmentFilter === "all") {
+            setSubdivisions([]);
+            return;
+        }
+        getSubdivisions(departmentFilter).then((data) => {
+            const normalized = data.map((s) => ({
+                id: s.id || s.documentId,
+                name: s.name,
+            }));
+            normalized.sort((a, b) =>
+                (a.name || "").localeCompare(b.name || "", "ru")
+            );
+            setSubdivisions(normalized);
+        }).catch(() => setSubdivisions([]));
+    }, [departmentFilter]);
 
     const loadDocuments = async () => {
         setLoading(true);
@@ -228,6 +250,15 @@ export default function DocumentList({ type = "my" }) {
             });
         }
 
+        if (subdivisionFilter !== "all") {
+            result = result.filter((doc) => {
+                const sub = doc.subdivision;
+                const subData = sub?.data ? sub.data : sub;
+                const subId = subData?.id || subData?.documentId;
+                return String(subId) === String(subdivisionFilter);
+            });
+        }
+
         const query = signerQuery.trim().toLowerCase();
         if (query) {
             result = result.filter((doc) => {
@@ -254,6 +285,8 @@ export default function DocumentList({ type = "my" }) {
         setSignerQuery("");
         setDocumentTypeFilter("all");
         setTitleQuery("");
+        setSubdivisionFilter("all");
+        setSubdivisions([]);
     };
 
     const handleCancelClick = (doc) => {
@@ -551,7 +584,8 @@ export default function DocumentList({ type = "my" }) {
         departmentFilter !== "all" ||
         signerQuery.trim().length > 0 ||
         documentTypeFilter !== "all" ||
-        titleQuery.trim().length > 0;
+        titleQuery.trim().length > 0 ||
+        subdivisionFilter !== "all";
     const signableDocsCount = getSignableDocuments().length;
 
     return (
@@ -712,6 +746,27 @@ export default function DocumentList({ type = "my" }) {
                                     ))}
                                 </select>
                             </div>
+
+                            {subdivisions.length > 0 && (
+                                <div>
+                                    <label className='block text-sm font-medium text-gray-700 mb-1'>
+                                        Подразделение
+                                    </label>
+                                    <select
+                                        value={subdivisionFilter}
+                                        onChange={(e) =>
+                                            setSubdivisionFilter(e.target.value)
+                                        }
+                                        className='px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent'>
+                                        <option value='all'>Все</option>
+                                        {subdivisions.map((s) => (
+                                            <option key={s.id} value={s.id}>
+                                                {s.name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
 
                             <div>
                                 <label className='block text-sm font-medium text-gray-700 mb-1'>

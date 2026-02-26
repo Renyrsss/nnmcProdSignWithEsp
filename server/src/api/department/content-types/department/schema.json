@@ -22,6 +22,12 @@
       "relation": "oneToMany",
       "target": "plugin::users-permissions.user",
       "mappedBy": "department"
+    },
+    "subdivisions": {
+      "type": "relation",
+      "relation": "oneToMany",
+      "target": "api::subdivision.subdivision",
+      "mappedBy": "department"
     }
   }
 }

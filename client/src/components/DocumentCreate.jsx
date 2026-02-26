@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from "react";
 import { getAllUsers, uploadFile, createDocument } from "../api/documents";
 import { getDocumentTypes } from "../api/documentTypes";
 import { getDepartments } from "../api/departments";
-import { getCurrentUser } from "../api/auth";
+import { getCurrentUser, getMe } from "../api/auth";
+import { getSubdivisions } from "../api/subdivisions";
 import {
     Upload,
     UserPlus,
@@ -35,6 +36,8 @@ export default function DocumentCreate() {
     const [departments, setDepartments] = useState([]);
     const [departmentFilter, setDepartmentFilter] = useState("all");
     const [signerSearchQuery, setSignerSearchQuery] = useState("");
+    const [subdivisions, setSubdivisions] = useState([]);
+    const [subdivisionId, setSubdivisionId] = useState("");
 
     // Массовое подписание ЭЦП
     const [currentSigningIndex, setCurrentSigningIndex] = useState(0);
@@ -52,6 +55,7 @@ export default function DocumentCreate() {
         loadUsers();
         loadDocumentTypes();
         loadDepartments();
+        loadSubdivisions();
     }, []);
 
     const loadUsers = async () => {
@@ -135,6 +139,26 @@ export default function DocumentCreate() {
         } catch (error) {
             console.error("Ошибка загрузки отделов:", error);
             toast.error("Ошибка загрузки отделов");
+        }
+    };
+
+    const loadSubdivisions = async () => {
+        try {
+            const me = await getMe();
+            const dept = me?.department;
+            const deptId = dept?.id || dept?.documentId || null;
+            if (!deptId) return;
+            const data = await getSubdivisions(deptId);
+            const normalized = data.map((s) => ({
+                id: s.id || s.documentId,
+                name: s.name,
+            }));
+            normalized.sort((a, b) =>
+                (a.name || "").localeCompare(b.name || "", "ru")
+            );
+            setSubdivisions(normalized);
+        } catch (err) {
+            console.error("Ошибка загрузки подразделений:", err);
         }
     };
 
@@ -335,6 +359,7 @@ export default function DocumentCreate() {
                         status: "in_progress",
                         creator: currentUser.id,
                         documentType: documentTypeId || null,
+                        subdivision: subdivisionId || null,
                         signers: selectedSigners,
                         signatureSequential: sequential,
                         signatureType: signatureType,
@@ -435,6 +460,28 @@ export default function DocumentCreate() {
                                     ))}
                                 </select>
                             </div>
+
+                            {subdivisions.length > 0 && (
+                                <div>
+                                    <label className='block text-sm font-medium text-gray-700 mb-2'>
+                                        Подразделение
+                                    </label>
+                                    <select
+                                        value={subdivisionId}
+                                        onChange={(e) =>
+                                            setSubdivisionId(e.target.value)
+                                        }
+                                        className='w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500'>
+                                        <option value=''>— Общий документ —</option>
+                                        {subdivisions.map((s) => (
+                                            <option key={s.id} value={s.id}>
+                                                {s.name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
+
                             {/* Загрузка файлов */}
                             <div>
                                 <label className='block text-sm font-medium text-gray-700 mb-2'>

@@ -61,6 +61,11 @@
       "relation": "manyToOne",
       "target": "api::document-type.document-type",
       "inversedBy": "documents"
+    },
+    "subdivision": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::subdivision.subdivision"
     }
   }
 }
