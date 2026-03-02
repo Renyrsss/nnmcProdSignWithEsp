@@ -10,7 +10,7 @@ export const getSubdivisions = async (departmentId = null) => {
         ? `&filters[department][id][$eq]=${departmentId}`
         : "";
     const response = await axios.get(
-        `${API_URL}/subdivisions?sort=name${filter}&populate=department`,
+        `${API_URL}/subdivisions?sort=name${filter}&populate=department&pagination[pageSize]=100`,
         { headers: { Authorization: `Bearer ${token}` } }
     );
     return response.data.data;
