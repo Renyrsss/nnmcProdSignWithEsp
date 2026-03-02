@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
     getMyDocuments,
     getActionablePendingDocuments,
@@ -49,6 +49,9 @@ export default function DocumentList({ type = "my" }) {
     const [titleQuery, setTitleQuery] = useState("");
     const [subdivisions, setSubdivisions] = useState([]);
     const [subdivisionFilter, setSubdivisionFilter] = useState("all");
+    const [subdivisionSearch, setSubdivisionSearch] = useState("");
+    const [subdivisionDropdownOpen, setSubdivisionDropdownOpen] = useState(false);
+    const subdivisionDropdownRef = useRef(null);
     const [goToPageInput, setGoToPageInput] = useState("");
 
     // Модальное окно
@@ -98,7 +101,18 @@ export default function DocumentList({ type = "my" }) {
     }, [type]);
 
     useEffect(() => {
+        const handleClickOutside = (e) => {
+            if (subdivisionDropdownRef.current && !subdivisionDropdownRef.current.contains(e.target)) {
+                setSubdivisionDropdownOpen(false);
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
+
+    useEffect(() => {
         setSubdivisionFilter("all");
+        setSubdivisionSearch("");
         if (departmentFilter === "all") {
             setSubdivisions([]);
             return;
@@ -286,6 +300,7 @@ export default function DocumentList({ type = "my" }) {
         setDocumentTypeFilter("all");
         setTitleQuery("");
         setSubdivisionFilter("all");
+        setSubdivisionSearch("");
         setSubdivisions([]);
     };
 
@@ -748,23 +763,54 @@ export default function DocumentList({ type = "my" }) {
                             </div>
 
                             {subdivisions.length > 0 && (
-                                <div>
+                                <div ref={subdivisionDropdownRef} className='relative'>
                                     <label className='block text-sm font-medium text-gray-700 mb-1'>
                                         Подразделение
                                     </label>
-                                    <select
-                                        value={subdivisionFilter}
-                                        onChange={(e) =>
-                                            setSubdivisionFilter(e.target.value)
+                                    <input
+                                        type='text'
+                                        placeholder={
+                                            subdivisionFilter !== "all"
+                                                ? subdivisions.find((s) => String(s.id) === String(subdivisionFilter))?.name || "Поиск..."
+                                                : "Все"
                                         }
-                                        className='px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent'>
-                                        <option value='all'>Все</option>
-                                        {subdivisions.map((s) => (
-                                            <option key={s.id} value={s.id}>
-                                                {s.name}
-                                            </option>
-                                        ))}
-                                    </select>
+                                        value={subdivisionSearch}
+                                        onChange={(e) => {
+                                            setSubdivisionSearch(e.target.value);
+                                            setSubdivisionDropdownOpen(true);
+                                        }}
+                                        onFocus={() => setSubdivisionDropdownOpen(true)}
+                                        className='w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent'
+                                    />
+                                    {subdivisionDropdownOpen && (
+                                        <div className='absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto'>
+                                            <div
+                                                className='px-3 py-2 text-sm cursor-pointer hover:bg-indigo-50 text-gray-500'
+                                                onMouseDown={() => {
+                                                    setSubdivisionFilter("all");
+                                                    setSubdivisionSearch("");
+                                                    setSubdivisionDropdownOpen(false);
+                                                }}>
+                                                Все
+                                            </div>
+                                            {subdivisions
+                                                .filter((s) =>
+                                                    s.name.toLowerCase().includes(subdivisionSearch.toLowerCase())
+                                                )
+                                                .map((s) => (
+                                                    <div
+                                                        key={s.id}
+                                                        className={`px-3 py-2 text-sm cursor-pointer hover:bg-indigo-50 ${String(subdivisionFilter) === String(s.id) ? "bg-indigo-100 font-medium" : ""}`}
+                                                        onMouseDown={() => {
+                                                            setSubdivisionFilter(s.id);
+                                                            setSubdivisionSearch("");
+                                                            setSubdivisionDropdownOpen(false);
+                                                        }}>
+                                                        {s.name}
+                                                    </div>
+                                                ))}
+                                        </div>
+                                    )}
                                 </div>
                             )}
 
