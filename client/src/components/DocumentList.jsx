@@ -763,7 +763,7 @@ export default function DocumentList({ type = "my" }) {
                             </div>
 
                             {subdivisions.length > 0 && (
-                                <div ref={subdivisionDropdownRef} className='relative'>
+                                <div ref={subdivisionDropdownRef} className='relative min-w-[320px]'>
                                     <label className='block text-sm font-medium text-gray-700 mb-1'>
                                         Подразделение
                                     </label>
@@ -783,7 +783,7 @@ export default function DocumentList({ type = "my" }) {
                                         className='w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent'
                                     />
                                     {subdivisionDropdownOpen && (
-                                        <div className='absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto'>
+                                        <div className='absolute z-50 mt-1 min-w-full w-max max-w-lg bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto'>
                                             <div
                                                 className='px-3 py-2 text-sm cursor-pointer hover:bg-indigo-50 text-gray-500'
                                                 onMouseDown={() => {
