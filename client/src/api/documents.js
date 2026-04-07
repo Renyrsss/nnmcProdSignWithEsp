@@ -47,8 +47,27 @@ export const getMyDocuments = async () => {
     const token = localStorage.getItem("token");
     const user = JSON.parse(localStorage.getItem("user"));
 
-    const baseUrl = `${API_URL}/documents?filters[$or][0][creator][id][$eq]=${user.id}&filters[$or][1][assigned_users][id][$eq]=${user.id}&populate[creator][populate]=department&populate[documentType]=true&populate[originalFile]=true&populate[currentFile]=true&populate[subdivision]=true`;
-    return fetchAllPages(baseUrl, token);
+    const populate = "populate[creator][populate]=department&populate[documentType]=true&populate[originalFile]=true&populate[currentFile]=true&populate[subdivision]=true";
+
+    // Два отдельных запроса вместо $or, чтобы избежать дублирования строк в SQL
+    // и связанных с ним проблем пагинации в Strapi v5
+    const creatorUrl = `${API_URL}/documents?filters[creator][id][$eq]=${user.id}&${populate}`;
+    const assignedUrl = `${API_URL}/documents?filters[assigned_users][id][$eq]=${user.id}&${populate}`;
+
+    const [creatorDocs, assignedDocs] = await Promise.all([
+        fetchAllPages(creatorUrl, token),
+        fetchAllPages(assignedUrl, token),
+    ]);
+
+    // Мёрджим и дедуплицируем по documentId
+    const seen = new Set(creatorDocs.map((d) => d.documentId));
+    for (const doc of assignedDocs) {
+        if (!seen.has(doc.documentId)) {
+            creatorDocs.push(doc);
+        }
+    }
+
+    return creatorDocs;
 };
 
 // Получить документы назначенные мне на подпись
