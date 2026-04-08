@@ -19,102 +19,25 @@ export const isMyTurnToSign = (doc, userId) => {
         .every((s) => s.status === "signed");
 };
 
-// Загрузить все страницы из Strapi (автопагинация)
-// ВАЖНО: не полагаемся на meta.pagination.pageCount/total — при фильтре по relation
-// + populate Strapi v5 может возвращать неконсистентный счётчик из-за JOIN-дублей,
-// из-за чего цикл преждевременно останавливался и часть документов не подгружалась.
-// Идём по страницам пока приходят данные, дедупим по documentId.
-const fetchAllPages = async (baseUrl, token) => {
-    const seen = new Set();
-    const allData = [];
-    let page = 1;
-    const pageSize = 100;
-    const MAX_PAGES = 200; // safety stop (20 000 записей)
-    const tag = baseUrl.split("?")[1]?.slice(0, 80) || baseUrl;
-
-    while (page <= MAX_PAGES) {
-        const separator = baseUrl.includes("?") ? "&" : "?";
-        const url = `${baseUrl}${separator}pagination[page]=${page}&pagination[pageSize]=${pageSize}&pagination[withCount]=true`;
-        const response = await axios.get(url, {
-            headers: { Authorization: `Bearer ${token}` },
-        });
-
-        const { data, meta } = response.data;
-        const returned = Array.isArray(data) ? data.length : 0;
-
-        // Диагностика — видно в DevTools Console
-        // eslint-disable-next-line no-console
-        console.log(
-            `[fetchAllPages] ${tag} page=${page} returned=${returned} meta=`,
-            meta?.pagination
-        );
-
-        if (returned === 0) break;
-
-        let added = 0;
-        for (const item of data) {
-            const key = item.documentId ?? item.id;
-            if (!seen.has(key)) {
-                seen.add(key);
-                allData.push(item);
-                added++;
-            }
-        }
-        // eslint-disable-next-line no-console
-        console.log(
-            `[fetchAllPages] ${tag} page=${page} added=${added} totalSoFar=${allData.length}`
-        );
-
-        // Если фактически вернулось меньше pageSize — это последняя страница.
-        if (returned < pageSize) break;
-
-        // Доп. страховка: если total известен и мы уже всё собрали — выходим.
-        const total = meta?.pagination?.total;
-        if (typeof total === "number" && allData.length >= total) break;
-
-        page++;
-    }
-
-    // eslint-disable-next-line no-console
-    console.log(`[fetchAllPages] ${tag} DONE total=${allData.length}`);
-    return allData;
+// Получить документы текущего пользователя через серверный эндпоинт.
+// Авторизация и distinct-фильтрация выполняются на сервере, здесь только
+// HTTP-вызов. role: 'creator' | 'assigned' | 'all'.
+const fetchMine = async (role) => {
+    const token = localStorage.getItem("token");
+    const response = await axios.get(`${API_URL}/documents/mine?role=${role}`, {
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    return response.data?.data || [];
 };
 
-// Получить документы созданные мной
+// Документы, в которых я автор ИЛИ подписант (для вкладки "Мои документы").
 export const getMyDocuments = async () => {
-    const token = localStorage.getItem("token");
-    const user = JSON.parse(localStorage.getItem("user"));
-
-    const populate = "populate[creator][populate]=department&populate[documentType]=true&populate[originalFile]=true&populate[currentFile]=true&populate[subdivision]=true";
-
-    // Два отдельных запроса вместо $or, чтобы избежать дублирования строк в SQL
-    // и связанных с ним проблем пагинации в Strapi v5
-    const creatorUrl = `${API_URL}/documents?filters[creator][id][$eq]=${user.id}&${populate}`;
-    const assignedUrl = `${API_URL}/documents?filters[assigned_users][id][$eq]=${user.id}&${populate}`;
-
-    const [creatorDocs, assignedDocs] = await Promise.all([
-        fetchAllPages(creatorUrl, token),
-        fetchAllPages(assignedUrl, token),
-    ]);
-
-    // Мёрджим и дедуплицируем по documentId
-    const seen = new Set(creatorDocs.map((d) => d.documentId));
-    for (const doc of assignedDocs) {
-        if (!seen.has(doc.documentId)) {
-            creatorDocs.push(doc);
-        }
-    }
-
-    return creatorDocs;
+    return fetchMine("all");
 };
 
-// Получить документы назначенные мне на подпись
+// Документы, назначенные мне на подпись (для вкладки "На подпись").
 export const getPendingDocuments = async () => {
-    const token = localStorage.getItem("token");
-    const user = JSON.parse(localStorage.getItem("user"));
-
-    const baseUrl = `${API_URL}/documents?filters[assigned_users][id][$eq]=${user.id}&populate[creator][populate]=department&populate[documentType]=true&populate[originalFile]=true&populate[currentFile]=true&populate[subdivision]=true`;
-    return fetchAllPages(baseUrl, token);
+    return fetchMine("assigned");
 };
 
 export const getActionablePendingDocuments = async () => {

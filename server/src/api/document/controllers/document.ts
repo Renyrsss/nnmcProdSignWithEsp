@@ -30,6 +30,77 @@ export default factories.createCoreController(
     "api::document.document",
     ({ strapi }) => ({
         /**
+         * GET /api/documents/mine?role=creator|assigned|all
+         *
+         * Возвращает документы, относящиеся к текущему пользователю.
+         * Авторизация выполняется на сервере: фильтр по user.id берётся
+         * из ctx.state.user, клиент не может его подменить.
+         *
+         * Использует document layer (strapi.documents) — он возвращает
+         * distinct-документы, минуя баг REST-пагинации с дублями строк
+         * при JOIN на many-to-many (assigned_users).
+         *
+         * На этом шаге пагинация не выставляется наружу: возвращаем все
+         * записи одним ответом, чтобы клиентский UI (с пагинацией в JS)
+         * продолжил работать без переписывания. Server-side пагинация
+         * фильтров — отдельной задачей.
+         */
+        async findMine(ctx) {
+            const user = ctx.state.user;
+            if (!user) return ctx.unauthorized("Необходима авторизация");
+
+            const role = (ctx.query.role as string) || "all";
+
+            let filters: any;
+            if (role === "creator") {
+                filters = { creator: { id: user.id } };
+            } else if (role === "assigned") {
+                filters = { assigned_users: { id: user.id } };
+            } else {
+                filters = {
+                    $or: [
+                        { creator: { id: user.id } },
+                        { assigned_users: { id: user.id } },
+                    ],
+                };
+            }
+
+            const populate = {
+                creator: { populate: { department: true } },
+                documentType: true,
+                originalFile: true,
+                currentFile: true,
+                subdivision: true,
+            } as any;
+
+            // Идём пакетами через document layer — это безопасно для
+            // больших коллекций и не нарвётся на REST maxLimit.
+            const pageSize = 200;
+            let start = 0;
+            const all: any[] = [];
+
+            // eslint-disable-next-line no-constant-condition
+            while (true) {
+                const batch = await strapi
+                    .documents("api::document.document")
+                    .findMany({
+                        filters,
+                        populate,
+                        sort: { createdAt: "desc" } as any,
+                        start,
+                        limit: pageSize,
+                    } as any);
+
+                if (!batch || batch.length === 0) break;
+                all.push(...batch);
+                if (batch.length < pageSize) break;
+                start += pageSize;
+            }
+
+            return ctx.send({ data: all, meta: { total: all.length } });
+        },
+
+        /**
          * GET /api/documents/:id/file-url?file=current|original
          * Returns a pre-signed MinIO URL for the document's main file (15 min TTL).
          * Accessible only to the document creator or assigned users.
