@@ -551,8 +551,15 @@ export default function DocumentView() {
                 <div className='bg-white rounded-2xl shadow-xl p-8'>
                     <div className='flex items-start justify-between mb-6 flex-wrap gap-4'>
                         <div>
-                            <h1 className='text-3xl font-bold text-gray-800 mb-2'>
-                                {documentData.title}
+                            <h1 className='text-3xl font-bold text-gray-800 mb-2 flex items-center gap-3 flex-wrap'>
+                                <span>{documentData.title}</span>
+                                {documentData.uid && (
+                                    <span
+                                        className='text-sm font-mono font-normal text-gray-400 bg-gray-100 px-2 py-1 rounded'
+                                        title='Уникальный идентификатор документа'>
+                                        #{documentData.uid}
+                                    </span>
+                                )}
                             </h1>
                             <p className='text-gray-600'>
                                 Создан:{" "}

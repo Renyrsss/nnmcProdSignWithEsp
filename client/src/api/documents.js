@@ -30,27 +30,43 @@ const fetchAllPages = async (baseUrl, token) => {
     let page = 1;
     const pageSize = 100;
     const MAX_PAGES = 200; // safety stop (20 000 записей)
+    const tag = baseUrl.split("?")[1]?.slice(0, 80) || baseUrl;
 
     while (page <= MAX_PAGES) {
         const separator = baseUrl.includes("?") ? "&" : "?";
-        const response = await axios.get(
-            `${baseUrl}${separator}pagination[page]=${page}&pagination[pageSize]=${pageSize}&pagination[withCount]=true`,
-            { headers: { Authorization: `Bearer ${token}` } }
-        );
+        const url = `${baseUrl}${separator}pagination[page]=${page}&pagination[pageSize]=${pageSize}&pagination[withCount]=true`;
+        const response = await axios.get(url, {
+            headers: { Authorization: `Bearer ${token}` },
+        });
 
         const { data, meta } = response.data;
-        if (!Array.isArray(data) || data.length === 0) break;
+        const returned = Array.isArray(data) ? data.length : 0;
 
+        // Диагностика — видно в DevTools Console
+        // eslint-disable-next-line no-console
+        console.log(
+            `[fetchAllPages] ${tag} page=${page} returned=${returned} meta=`,
+            meta?.pagination
+        );
+
+        if (returned === 0) break;
+
+        let added = 0;
         for (const item of data) {
             const key = item.documentId ?? item.id;
             if (!seen.has(key)) {
                 seen.add(key);
                 allData.push(item);
+                added++;
             }
         }
+        // eslint-disable-next-line no-console
+        console.log(
+            `[fetchAllPages] ${tag} page=${page} added=${added} totalSoFar=${allData.length}`
+        );
 
         // Если фактически вернулось меньше pageSize — это последняя страница.
-        if (data.length < pageSize) break;
+        if (returned < pageSize) break;
 
         // Доп. страховка: если total известен и мы уже всё собрали — выходим.
         const total = meta?.pagination?.total;
@@ -59,6 +75,8 @@ const fetchAllPages = async (baseUrl, token) => {
         page++;
     }
 
+    // eslint-disable-next-line no-console
+    console.log(`[fetchAllPages] ${tag} DONE total=${allData.length}`);
     return allData;
 };
 
