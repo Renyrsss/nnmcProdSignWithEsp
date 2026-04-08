@@ -20,22 +20,42 @@ export const isMyTurnToSign = (doc, userId) => {
 };
 
 // Загрузить все страницы из Strapi (автопагинация)
+// ВАЖНО: не полагаемся на meta.pagination.pageCount/total — при фильтре по relation
+// + populate Strapi v5 может возвращать неконсистентный счётчик из-за JOIN-дублей,
+// из-за чего цикл преждевременно останавливался и часть документов не подгружалась.
+// Идём по страницам пока приходят данные, дедупим по documentId.
 const fetchAllPages = async (baseUrl, token) => {
-    let allData = [];
+    const seen = new Set();
+    const allData = [];
     let page = 1;
     const pageSize = 100;
+    const MAX_PAGES = 200; // safety stop (20 000 записей)
 
-    while (true) {
+    while (page <= MAX_PAGES) {
         const separator = baseUrl.includes("?") ? "&" : "?";
         const response = await axios.get(
-            `${baseUrl}${separator}pagination[page]=${page}&pagination[pageSize]=${pageSize}`,
+            `${baseUrl}${separator}pagination[page]=${page}&pagination[pageSize]=${pageSize}&pagination[withCount]=true`,
             { headers: { Authorization: `Bearer ${token}` } }
         );
 
         const { data, meta } = response.data;
-        allData = allData.concat(data);
+        if (!Array.isArray(data) || data.length === 0) break;
 
-        if (page >= meta.pagination.pageCount) break;
+        for (const item of data) {
+            const key = item.documentId ?? item.id;
+            if (!seen.has(key)) {
+                seen.add(key);
+                allData.push(item);
+            }
+        }
+
+        // Если фактически вернулось меньше pageSize — это последняя страница.
+        if (data.length < pageSize) break;
+
+        // Доп. страховка: если total известен и мы уже всё собрали — выходим.
+        const total = meta?.pagination?.total;
+        if (typeof total === "number" && allData.length >= total) break;
+
         page++;
     }
 
