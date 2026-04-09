@@ -49,7 +49,15 @@ export default factories.createCoreController(
             const user = ctx.state.user;
             if (!user) return ctx.unauthorized("Необходима авторизация");
 
+            // Строгий whitelist: невалидное значение — 400, а не молчаливый
+            // fallback. Это защищает от опечаток и от попыток передать мусор.
+            const ALLOWED_ROLES = ["creator", "assigned", "all"] as const;
             const role = (ctx.query.role as string) || "all";
+            if (!ALLOWED_ROLES.includes(role as any)) {
+                return ctx.badRequest(
+                    `Параметр role должен быть одним из: ${ALLOWED_ROLES.join(", ")}`
+                );
+            }
 
             let filters: any;
             if (role === "creator") {
@@ -65,17 +73,32 @@ export default factories.createCoreController(
                 };
             }
 
+            // КРИТИЧНО: для creator явно перечисляем безопасные поля.
+            // Без fields populate подтягивает ВСЕ колонки таблицы users,
+            // включая password (bcrypt), resetPasswordToken,
+            // confirmationToken, provider — это PII и секреты.
+            // Для media-файлов тоже ограничиваем поля, чтобы не светить
+            // provider_metadata и внутреннюю структуру storage.
             const populate = {
-                creator: { populate: { department: true } },
-                documentType: true,
-                originalFile: true,
-                currentFile: true,
-                subdivision: true,
+                creator: {
+                    fields: ["id", "username", "fullName", "email"],
+                    populate: {
+                        department: { fields: ["id", "name"] },
+                    },
+                },
+                documentType: { fields: ["id", "name"] },
+                originalFile: {
+                    fields: ["id", "name", "hash", "ext", "mime", "size", "url"],
+                },
+                currentFile: {
+                    fields: ["id", "name", "hash", "ext", "mime", "size", "url"],
+                },
+                subdivision: { fields: ["id", "name"] },
             } as any;
 
             // Идём пакетами через document layer — это безопасно для
             // больших коллекций и не нарвётся на REST maxLimit.
-            const pageSize = 200;
+            const PAGE_SIZE = 200;
             let start = 0;
             const all: any[] = [];
 
@@ -88,16 +111,25 @@ export default factories.createCoreController(
                         populate,
                         sort: { createdAt: "desc" } as any,
                         start,
-                        limit: pageSize,
+                        limit: PAGE_SIZE,
                     } as any);
 
                 if (!batch || batch.length === 0) break;
                 all.push(...batch);
-                if (batch.length < pageSize) break;
-                start += pageSize;
+                if (batch.length < PAGE_SIZE) break;
+                start += PAGE_SIZE;
             }
 
-            return ctx.send({ data: all, meta: { total: all.length } });
+            // Дополнительная защита: прогоняем ответ через стандартный
+            // sanitize Strapi. Даже если где-то в populate просочится
+            // чувствительное поле — sanitize его срежет по правилам
+            // content-type (private fields, password и т.п.).
+            const sanitized = await this.sanitizeOutput(all, ctx);
+
+            return ctx.send({
+                data: sanitized,
+                meta: { total: Array.isArray(sanitized) ? sanitized.length : 0 },
+            });
         },
 
         /**
