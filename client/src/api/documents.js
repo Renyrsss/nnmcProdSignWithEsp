@@ -4,6 +4,12 @@ import { getToken } from "./auth";
 const API_URL = `${import.meta.env.VITE_API_BASE}/api`;
 
 export const isMyTurnToSign = (doc, userId) => {
+    // Документ должен быть активным. Отозванные/завершённые/ревизионные
+    // не подписываются даже если у пользователя signer.status === "pending".
+    if (doc?.status !== "pending" && doc?.status !== "in_progress") {
+        return false;
+    }
+
     const signers = doc?.signers || [];
     const mySignerIndex = signers.findIndex((s) => Number(s.userId) === Number(userId));
 

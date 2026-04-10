@@ -123,7 +123,13 @@ export default function DocumentView() {
             if (mySigner) {
                 setMySignerInfo(mySigner);
 
-                if (mySigner.status === "pending") {
+                // Подписывать можно только если документ реально в работе.
+                // Если автор отозвал (cancelled), документ завершён (completed)
+                // или в ревизии (revision) — кнопка не должна быть доступна.
+                const docIsActive =
+                    doc.status === "pending" || doc.status === "in_progress";
+
+                if (docIsActive && mySigner.status === "pending") {
                     if (doc.signatureSequential) {
                         const myIndex = signers.findIndex(
                             (s) => s.userId === currentUser.id,
@@ -389,8 +395,13 @@ export default function DocumentView() {
                 },
             ];
 
+            // Отзыв на корректировку переводит документ в revision.
+            // Пока автор не зальёт исправленную версию через handleResend —
+            // документ не доступен для подписания. Это закрывает баг:
+            // раньше recall ставил in_progress сразу, и подписанты могли
+            // подписать старую версию до загрузки новой.
             await updateDocument(documentData.documentId, {
-                status: "in_progress",
+                status: "revision",
                 signatureHistory: updatedHistory,
             });
 

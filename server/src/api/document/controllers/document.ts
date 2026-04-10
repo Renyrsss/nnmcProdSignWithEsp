@@ -13,17 +13,23 @@ const makeS3Client = () =>
         forcePathStyle: true,
     });
 
-const checkMinioEnv = (ctx: any) => {
-    if (
-        !process.env.MINIO_ENDPOINT ||
-        !process.env.MINIO_BUCKET ||
-        !process.env.MINIO_ACCESS_KEY ||
-        !process.env.MINIO_SECRET_KEY
-    ) {
-        ctx.internalServerError("MinIO не настроен");
-        return false;
-    }
-    return true;
+const isMinioConfigured = () =>
+    !!process.env.MINIO_ENDPOINT &&
+    !!process.env.MINIO_BUCKET &&
+    !!process.env.MINIO_ACCESS_KEY &&
+    !!process.env.MINIO_SECRET_KEY;
+
+/**
+ * Строит абсолютный URL для файла, отдаваемого локальным провайдером Strapi.
+ * В dev без MinIO файлы лежат в public/uploads/, и в media-объекте поле
+ * `url` содержит относительный путь вида "/uploads/xxx.pdf". Клиенту нужен
+ * абсолютный URL, поэтому дополняем его origin'ом сервера.
+ */
+const buildLocalFileUrl = (ctx: any, relativeUrl: string): string => {
+    if (!relativeUrl) return "";
+    if (/^https?:\/\//i.test(relativeUrl)) return relativeUrl;
+    const origin = `${ctx.request.protocol}://${ctx.request.host}`;
+    return `${origin}${relativeUrl}`;
 };
 
 export default factories.createCoreController(
@@ -172,7 +178,12 @@ export default factories.createCoreController(
 
             if (!file) return ctx.notFound("Файл не найден");
 
-            if (!checkMinioEnv(ctx)) return;
+            // Dev / локальный провайдер: MinIO не настроен — отдаём прямой
+            // URL файла из public/uploads/. Никакого presign не требуется,
+            // файлы публично доступны по /uploads/<hash><ext>.
+            if (!isMinioConfigured()) {
+                return ctx.send({ url: buildLocalFileUrl(ctx, file.url) });
+            }
 
             const key = `${file.hash}${file.ext}`;
             const command = new GetObjectCommand({
@@ -217,7 +228,17 @@ export default factories.createCoreController(
             if (!isCreator && !isAssigned)
                 return ctx.forbidden("Нет доступа к этому документу");
 
-            if (!checkMinioEnv(ctx)) return;
+            // Dev / локальный провайдер: MinIO нет — ключ трактуем как
+            // относительный путь внутри public/uploads/ и отдаём прямой URL.
+            // Лёгкий sanity-check чтобы не дать клиенту достучаться до
+            // произвольного файла через path traversal.
+            if (!isMinioConfigured()) {
+                if (key.includes("..") || key.startsWith("/")) {
+                    return ctx.badRequest("Некорректный ключ файла");
+                }
+                const relative = `/uploads/${key}`;
+                return ctx.send({ url: buildLocalFileUrl(ctx, relative) });
+            }
 
             const command = new GetObjectCommand({
                 Bucket: process.env.MINIO_BUCKET,

@@ -553,6 +553,7 @@ export interface ApiDocumentDocument extends Struct.CollectionTypeSchema {
       'api::subdivision.subdivision'
     >;
     title: Schema.Attribute.String & Schema.Attribute.Required;
+    uid: Schema.Attribute.String & Schema.Attribute.Unique;
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
       Schema.Attribute.Private;
