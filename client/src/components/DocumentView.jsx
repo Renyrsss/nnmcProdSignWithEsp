@@ -24,6 +24,7 @@ import {
     RotateCcw,
     Upload,
     AlertTriangle,
+    FileSignature,
 } from "lucide-react";
 import DocumentSignatureApp from "./DocumentSignatureApp";
 import ConfirmModal from "./ConfirmModal";
@@ -48,6 +49,9 @@ export default function DocumentView() {
     const [resendFile, setResendFile] = useState(null);
     const [actionLoading, setActionLoading] = useState(false);
     const [signFileUrl, setSignFileUrl] = useState(null);
+    const [previewMode, setPreviewMode] = useState("current");
+    const [originalPreviewUrl, setOriginalPreviewUrl] = useState(null);
+    const [originalLoading, setOriginalLoading] = useState(false);
 
     const currentUser = getCurrentUser();
 
@@ -89,6 +93,46 @@ export default function DocumentView() {
             cancelled = true;
         };
     }, [documentData]);
+
+    // handleResend перезаписывает originalFile новой версией. Сбрасываем
+    // закешированный presigned URL и режим, чтобы не показывать
+    // пользователю устаревший файл.
+    useEffect(() => {
+        setOriginalPreviewUrl(null);
+        setPreviewMode("current");
+    }, [documentData?.originalFile?.id]);
+
+    // Кнопка "Оригинал/Подписанный" имеет смысл только когда currentFile уже
+    // отличается от originalFile (т.е. появились QR/штампы). До первой подписи
+    // оба файла указывают на один и тот же blob — переключать нечего.
+    const hasOriginalDifferent = Boolean(
+        documentData?.originalFile?.id &&
+            documentData?.currentFile?.id &&
+            documentData.originalFile.id !== documentData.currentFile.id
+    );
+
+    const handleTogglePreview = async () => {
+        const next = previewMode === "current" ? "original" : "current";
+
+        if (next === "original" && !originalPreviewUrl) {
+            setOriginalLoading(true);
+            try {
+                const url = await getDocumentFileUrl(
+                    documentData.documentId,
+                    "original"
+                );
+                setOriginalPreviewUrl(url);
+            } catch (err) {
+                console.error("Original preview load error:", err);
+                toast.error("Не удалось загрузить оригинал документа");
+                setOriginalLoading(false);
+                return;
+            }
+            setOriginalLoading(false);
+        }
+
+        setPreviewMode(next);
+    };
 
     const loadDocument = async () => {
         setLoading(true);
@@ -996,13 +1040,43 @@ export default function DocumentView() {
 
                     {pdfPreviewUrl && (
                         <div className='mb-6'>
-                            <h2 className='text-xl font-semibold text-gray-800 mb-4 flex items-center gap-2'>
-                                <Eye className='w-5 h-5 text-indigo-600' />
-                                Предпросмотр документа
-                            </h2>
+                            <div className='flex items-center justify-between mb-4 flex-wrap gap-3'>
+                                <h2 className='text-xl font-semibold text-gray-800 flex items-center gap-2'>
+                                    <Eye className='w-5 h-5 text-indigo-600' />
+                                    Предпросмотр документа
+                                    {previewMode === "original" && (
+                                        <span className='text-sm font-normal text-gray-500'>
+                                            (оригинал)
+                                        </span>
+                                    )}
+                                </h2>
+                                {hasOriginalDifferent && (
+                                    <button
+                                        onClick={handleTogglePreview}
+                                        disabled={originalLoading}
+                                        className='flex items-center gap-2 px-4 py-2 border border-indigo-300 text-indigo-700 hover:bg-indigo-50 rounded-lg text-sm font-medium transition-colors disabled:opacity-50'
+                                        title='Переключить между оригиналом и подписанной версией'>
+                                        {originalLoading ? (
+                                            <div className='animate-spin rounded-full h-4 w-4 border-b-2 border-indigo-600' />
+                                        ) : previewMode === "current" ? (
+                                            <FileText className='w-4 h-4' />
+                                        ) : (
+                                            <FileSignature className='w-4 h-4' />
+                                        )}
+                                        {previewMode === "current"
+                                            ? "Показать оригинал"
+                                            : "Показать подписанный"}
+                                    </button>
+                                )}
+                            </div>
                             <div className='mx-auto'>
                                 <iframe
-                                    src={pdfPreviewUrl}
+                                    src={
+                                        previewMode === "original" &&
+                                        originalPreviewUrl
+                                            ? originalPreviewUrl
+                                            : pdfPreviewUrl
+                                    }
                                     title='Предпросмотр PDF'
                                     className='w-full rounded-lg border border-gray-200 shadow-sm'
                                     style={{ height: 1000 }}
