@@ -838,6 +838,32 @@ export default function DocumentView() {
                             )}
                         </div>
                     )}
+                    {documentData.creator && (
+                        <div className='mb-6'>
+                            <h2 className='text-xl font-semibold text-gray-800 mb-4'>
+                                Автор
+                            </h2>
+                            <div className='p-4 border border-gray-200 rounded-lg'>
+                                <div className='flex items-center gap-3'>
+                                    <div>
+                                        <p className='font-medium text-gray-800'>
+                                            {documentData.creator.fullName ||
+                                                documentData.creator.username}
+                                        </p>
+                                        <p className='text-sm text-gray-600'>
+                                            {documentData.creator.email}
+                                        </p>
+                                        {documentData.creator.department?.name && (
+                                            <p className='text-xs text-gray-500 mt-1'>
+                                                {documentData.creator.department.name}
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     <div className='mb-6'>
                         <h2 className='text-xl font-semibold text-gray-800 mb-4'>
                             Подписанты
