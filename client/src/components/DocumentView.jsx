@@ -49,6 +49,9 @@ export default function DocumentView() {
     const [resendFile, setResendFile] = useState(null);
     const [actionLoading, setActionLoading] = useState(false);
     const [signFileUrl, setSignFileUrl] = useState(null);
+    const [showResendSignature, setShowResendSignature] = useState(false);
+    const [resendFileUrl, setResendFileUrl] = useState(null);
+    const [resendOriginalUpload, setResendOriginalUpload] = useState(null);
     const [previewMode, setPreviewMode] = useState("current");
     const [originalPreviewUrl, setOriginalPreviewUrl] = useState(null);
     const [originalLoading, setOriginalLoading] = useState(false);
@@ -468,7 +471,41 @@ export default function DocumentView() {
         }
         setActionLoading(true);
         try {
-            const uploadedFile = await uploadFile(resendFile);
+            const uploadedOriginal = await uploadFile(resendFile);
+            const url = URL.createObjectURL(resendFile);
+            setResendOriginalUpload(uploadedOriginal);
+            setResendFileUrl(url);
+            setShowResendSignature(true);
+        } catch (error) {
+            console.error("Ошибка загрузки файла:", error);
+            toast.error("Ошибка при загрузке файла");
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
+    const handleResendSignatureComplete = async (
+        signedPdfBlob,
+        cmsBlob,
+        signatureData,
+    ) => {
+        try {
+            const uploadedSigned = await uploadFile(signedPdfBlob);
+
+            let cmsFileUrl = null;
+            let cmsFileName = null;
+
+            if (cmsBlob) {
+                const cmsFileNameGenerated = `${
+                    documentData.title
+                }_${currentUser.username}_resend_${Date.now()}.cms`;
+                const cmsFileObj = new File([cmsBlob], cmsFileNameGenerated, {
+                    type: "application/pkcs7-signature",
+                });
+                const uploadedCmsFile = await uploadFile(cmsFileObj);
+                cmsFileUrl = uploadedCmsFile?.url || null;
+                cmsFileName = uploadedCmsFile?.name || cmsFileNameGenerated;
+            }
 
             const creatorId =
                 documentData?.creator?.id ||
@@ -510,6 +547,19 @@ export default function DocumentView() {
                 s.order = i + 1;
             });
 
+            // Автор уже подписал — ставим ему signed
+            const creatorIndex = nextSigners.findIndex(
+                (s) => s.userId === creatorId
+            );
+            if (creatorIndex !== -1) {
+                nextSigners[creatorIndex].status = "signed";
+                nextSigners[creatorIndex].signedAt = new Date().toISOString();
+                nextSigners[creatorIndex].role =
+                    signatureData.position ||
+                    signatureData.name ||
+                    "Создатель";
+            }
+
             const updatedHistory = [
                 ...(documentData.signatureHistory || []),
                 {
@@ -519,24 +569,42 @@ export default function DocumentView() {
                         currentUser.fullName || currentUser.username,
                     date: new Date().toISOString(),
                 },
+                {
+                    userId: currentUser.id,
+                    userName: currentUser.fullName || currentUser.username,
+                    role:
+                        signatureData.position ||
+                        signatureData.name ||
+                        "Создатель",
+                    signedAt: new Date().toISOString(),
+                    signatureType: signatureData.type,
+                    cmsFileUrl: cmsFileUrl,
+                    cmsFileName: cmsFileName,
+                    iin: signatureData.iin || null,
+                },
             ];
 
+            const allSigned = nextSigners.every(
+                (s) => s.status === "signed",
+            );
+
             await updateDocument(documentData.documentId, {
-                status: "in_progress",
-                originalFile: uploadedFile.id,
-                currentFile: uploadedFile.id,
+                status: allSigned ? "completed" : "in_progress",
+                originalFile: resendOriginalUpload.id,
+                currentFile: uploadedSigned.id,
                 signers: nextSigners,
                 signatureHistory: updatedHistory,
             });
 
-            toast.success("Документ отправлен заново");
+            toast.success("Документ подписан и отправлен заново");
+            setShowResendSignature(false);
+            setResendFileUrl(null);
+            setResendOriginalUpload(null);
             setResendFile(null);
             loadDocument();
         } catch (error) {
             console.error("Ошибка отправки:", error);
             toast.error("Ошибка при повторной отправке");
-        } finally {
-            setActionLoading(false);
         }
     };
 
@@ -575,6 +643,19 @@ export default function DocumentView() {
                 isSigningDocument={true}
                 signatureType={documentData.signatureType}
                 signatureIndex={signedCount}
+            />
+        );
+    }
+
+    if (showResendSignature && resendFileUrl) {
+        return (
+            <DocumentSignatureApp
+                documentId={documentData.id}
+                preloadedFileUrl={resendFileUrl}
+                onSignatureComplete={handleResendSignatureComplete}
+                isSigningDocument={true}
+                signatureType={documentData.signatureType}
+                signatureIndex={0}
             />
         );
     }
