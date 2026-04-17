@@ -844,20 +844,28 @@ export default function DocumentView() {
                                 Автор
                             </h2>
                             <div className='p-4 border border-gray-200 rounded-lg'>
-                                <div className='flex items-center gap-3'>
-                                    <div>
-                                        <p className='font-medium text-gray-800'>
-                                            {documentData.creator.fullName ||
-                                                documentData.creator.username}
-                                        </p>
-                                        <p className='text-sm text-gray-600'>
-                                            {documentData.creator.email}
-                                        </p>
-                                        {documentData.creator.department?.name && (
-                                            <p className='text-xs text-gray-500 mt-1'>
-                                                {documentData.creator.department.name}
+                                <div className='flex items-center justify-between'>
+                                    <div className='flex items-center gap-3'>
+                                        <div>
+                                            <p className='font-medium text-gray-800'>
+                                                {documentData.creator.fullName ||
+                                                    documentData.creator.username}
                                             </p>
-                                        )}
+                                            <p className='text-sm text-gray-600'>
+                                                {documentData.creator.email}
+                                            </p>
+                                            {documentData.creator.department?.name && (
+                                                <p className='text-xs text-gray-500 mt-1'>
+                                                    {documentData.creator.department.name}
+                                                </p>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <div className='text-right'>
+                                        <span className='inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium text-blue-600 bg-blue-100'>
+                                            <FileText className='w-3 h-3' />
+                                            Автор
+                                        </span>
                                     </div>
                                 </div>
                             </div>
