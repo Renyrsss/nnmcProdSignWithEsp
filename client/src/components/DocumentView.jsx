@@ -8,7 +8,8 @@ import {
     getDocumentFileUrl,
     presignDocumentFile,
 } from "../api/documents";
-import { getCurrentUser } from "../api/auth";
+import { getCurrentUser, isAdminUser } from "../api/auth";
+import { getAdminDocument } from "../api/admin";
 import {
     FileText,
     Clock,
@@ -154,11 +155,15 @@ export default function DocumentView() {
                 }
             });
 
-            const doc = allDocs.find((d) => d.id === parseInt(id));
+            let doc = allDocs.find((d) => d.id === parseInt(id));
+
+            if (!doc && isAdminUser(currentUser)) {
+                doc = await getAdminDocument(id);
+            }
 
             if (!doc) {
                 toast.error("Документ не найден");
-                navigate("/documents");
+                navigate(isAdminUser(currentUser) ? "/admin/documents" : "/documents");
                 return;
             }
 

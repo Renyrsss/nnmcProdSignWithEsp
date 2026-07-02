@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from "react";
 import { Outlet, Link, useLocation } from "react-router-dom";
-import { logout, getCurrentUser } from "../api/auth";
+import { logout, getCurrentUser, isAdminUser, refreshCurrentUser } from "../api/auth";
 import { getActionablePendingDocuments } from "../api/documents";
-import { LogOut, FileText, Clock, PlusCircle } from "lucide-react";
+import { LogOut, FileText, Clock, PlusCircle, Shield, Users } from "lucide-react";
 
 export default function MainLayout() {
-    const [user] = useState(getCurrentUser());
+    const [user, setUser] = useState(getCurrentUser());
     const [pendingCount, setPendingCount] = useState(0);
     const location = useLocation();
+    const isAdmin = isAdminUser(user);
 
     const loadPendingCount = async () => {
         try {
@@ -33,6 +34,16 @@ export default function MainLayout() {
         };
     }, []);
 
+    useEffect(() => {
+        refreshCurrentUser()
+            .then((freshUser) => {
+                if (freshUser) setUser(freshUser);
+            })
+            .catch((error) => {
+                console.error("Ошибка обновления пользователя:", error);
+            });
+    }, []);
+
     const handleLogout = () => {
         logout();
         window.location.reload();
@@ -40,6 +51,10 @@ export default function MainLayout() {
 
     const isActive = (path) => {
         return location.pathname === path;
+    };
+
+    const isActivePrefix = (path) => {
+        return location.pathname === path || location.pathname.startsWith(`${path}/`);
     };
 
     return (
@@ -88,6 +103,32 @@ export default function MainLayout() {
                                 <PlusCircle className='w-5 h-5' />
                                 Создать
                             </Link>
+
+                            {isAdmin && (
+                                <>
+                                    <Link
+                                        to='/admin/documents'
+                                        className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
+                                            isActivePrefix("/admin/documents")
+                                                ? "bg-indigo-100 text-indigo-700"
+                                                : "text-gray-700 hover:bg-gray-100"
+                                        }`}>
+                                        <Shield className='w-5 h-5' />
+                                        Все документы
+                                    </Link>
+
+                                    <Link
+                                        to='/admin/users'
+                                        className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
+                                            isActivePrefix("/admin/users")
+                                                ? "bg-indigo-100 text-indigo-700"
+                                                : "text-gray-700 hover:bg-gray-100"
+                                        }`}>
+                                        <Users className='w-5 h-5' />
+                                        Пользователи
+                                    </Link>
+                                </>
+                            )}
                         </nav>
 
                         <div className='flex items-center gap-3'>
@@ -142,6 +183,32 @@ export default function MainLayout() {
                             <PlusCircle className='w-4 h-4' />
                             Создать
                         </Link>
+
+                        {isAdmin && (
+                            <>
+                                <Link
+                                    to='/admin/documents'
+                                    className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
+                                        isActivePrefix("/admin/documents")
+                                            ? "bg-indigo-100 text-indigo-700"
+                                            : "text-gray-700 hover:bg-gray-100"
+                                    }`}>
+                                    <Shield className='w-4 h-4' />
+                                    Все
+                                </Link>
+
+                                <Link
+                                    to='/admin/users'
+                                    className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
+                                        isActivePrefix("/admin/users")
+                                            ? "bg-indigo-100 text-indigo-700"
+                                            : "text-gray-700 hover:bg-gray-100"
+                                    }`}>
+                                    <Users className='w-4 h-4' />
+                                    Люди
+                                </Link>
+                            </>
+                        )}
                     </nav>
                 </div>
             </header>

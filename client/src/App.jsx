@@ -6,6 +6,8 @@ import DocumentList from "./components/DocumentList";
 import DocumentCreate from "./components/DocumentCreate";
 import DocumentView from "./components/DocumentView";
 import BatchSignPage from "./components/BatchSignPage";
+import AdminDocumentsPage from "./components/AdminDocumentsPage";
+import AdminUsersPage from "./components/AdminUsersPage";
 import { ToastProvider } from "./components/Toast";
 import "./App.css";
 
@@ -39,6 +41,14 @@ function App() {
                             <Route
                                 path='documents/batch-sign'
                                 element={<BatchSignPage />}
+                            />
+                            <Route
+                                path='admin/documents'
+                                element={<AdminDocumentsPage />}
+                            />
+                            <Route
+                                path='admin/users'
+                                element={<AdminUsersPage />}
                             />
                         </Route>
                     </Routes>

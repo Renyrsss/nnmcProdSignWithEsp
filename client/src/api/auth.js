@@ -2,6 +2,12 @@ import axios from "axios";
 
 const API_URL = `${import.meta.env.VITE_API_BASE}/api`;
 
+const storeUser = (user) => {
+    if (user) {
+        localStorage.setItem("user", JSON.stringify(user));
+    }
+};
+
 export const login = async (identifier, password) => {
     try {
         const response = await axios.post(`${API_URL}/auth/local`, {
@@ -11,7 +17,8 @@ export const login = async (identifier, password) => {
 
         if (response.data.jwt) {
             localStorage.setItem("token", response.data.jwt);
-            localStorage.setItem("user", JSON.stringify(response.data.user));
+            storeUser(response.data.user);
+            await refreshCurrentUser();
         }
 
         return response.data;
@@ -30,7 +37,8 @@ export const register = async (username, email, password) => {
 
         if (response.data.jwt) {
             localStorage.setItem("token", response.data.jwt);
-            localStorage.setItem("user", JSON.stringify(response.data.user));
+            storeUser(response.data.user);
+            await refreshCurrentUser();
         }
 
         return response.data;
@@ -46,7 +54,11 @@ export const logout = () => {
 
 export const getCurrentUser = () => {
     const user = localStorage.getItem("user");
-    return user ? JSON.parse(user) : null;
+    try {
+        return user ? JSON.parse(user) : null;
+    } catch {
+        return null;
+    }
 };
 
 export const getToken = () => {
@@ -62,13 +74,34 @@ export const getUserFullName = () => {
     return user?.fullName || "";
 };
 
-export const getMe = async () => {
-    const token = getToken();
-    const response = await fetch(
-        `${API_URL}/users/me?populate=department`,
-        { headers: { Authorization: `Bearer ${token}` } }
+export const isAdminUser = (user = getCurrentUser()) => {
+    const role = user?.role;
+    const type = String(role?.type || "").toLowerCase();
+    const name = String(role?.name || "").toLowerCase();
+    return (
+        type === "app_admin" ||
+        type === "admin" ||
+        type === "administrator" ||
+        name === "admin" ||
+        name === "administrator" ||
+        name === "администратор"
     );
-    return response.json();
+};
+
+export const refreshCurrentUser = async () => {
+    const token = getToken();
+    if (!token) return null;
+
+    const response = await axios.get(`${API_URL}/admin/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    const user = response.data?.data || response.data;
+    storeUser(user);
+    return user;
+};
+
+export const getMe = async () => {
+    return refreshCurrentUser();
 };
 
 export const updateUserProfile = async (fullName) => {

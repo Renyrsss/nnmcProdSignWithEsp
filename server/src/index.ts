@@ -5,6 +5,115 @@ import { randomBytes } from "crypto";
 const generateUid = (): string =>
     randomBytes(5).toString("hex").toUpperCase();
 
+const APP_ADMIN_ROLE_TYPE = "app_admin";
+const APP_ADMIN_ROLE_NAME = "Admin";
+
+const AUTHENTICATED_APP_ACTIONS = [
+    "plugin::users-permissions.auth.logout",
+    "plugin::users-permissions.user.me",
+    "plugin::users-permissions.auth.changePassword",
+    "plugin::upload.content-api.upload",
+    "plugin::users-permissions.user.update",
+    "plugin::users-permissions.user.find",
+    "plugin::users-permissions.user.findOne",
+    "api::department.department.find",
+    "api::department.department.findOne",
+    "api::document-type.document-type.find",
+    "api::document-type.document-type.findOne",
+    "api::subdivision.subdivision.find",
+    "api::subdivision.subdivision.findOne",
+    "api::document.document.find",
+    "api::document.document.findOne",
+    "api::document.document.create",
+    "api::document.document.update",
+    "api::document.document.delete",
+    "api::document.document.findMine",
+    "api::document.document.getFileUrl",
+    "api::document.document.presignUrl",
+    "api::document.document.getAppMe",
+];
+
+const ADMIN_APP_ACTIONS = [
+    "api::document.document.findAdminDocuments",
+    "api::document.document.findAdminDocument",
+    "api::document.document.findAdminUsers",
+    "api::document.document.updateAdminUserPassword",
+    "api::document.document.updateAdminUserStatus",
+];
+
+const ensurePermission = async (
+    strapi: any,
+    roleId: number,
+    action: string
+) => {
+    const existing = await strapi.db
+        .query("plugin::users-permissions.permission")
+        .findOne({
+            where: {
+                action,
+                role: { id: roleId },
+            },
+        });
+
+    if (existing) return false;
+
+    await strapi.db.query("plugin::users-permissions.permission").create({
+        data: {
+            action,
+            role: roleId,
+        },
+    });
+
+    return true;
+};
+
+const ensureAppAdminRole = async (strapi: any) => {
+    let role = await strapi.db
+        .query("plugin::users-permissions.role")
+        .findOne({ where: { type: APP_ADMIN_ROLE_TYPE } });
+
+    if (!role) {
+        role = await strapi.db.query("plugin::users-permissions.role").findOne({
+            where: { name: APP_ADMIN_ROLE_NAME },
+        });
+    }
+
+    if (!role) {
+        role = await strapi.db.query("plugin::users-permissions.role").create({
+            data: {
+                name: APP_ADMIN_ROLE_NAME,
+                description:
+                    "Администратор приложения: просмотр всех документов, пользователей и отделов",
+                type: APP_ADMIN_ROLE_TYPE,
+            },
+        });
+        strapi.log.info("[app-admin] создана users-permissions роль Admin");
+    }
+
+    let createdCount = 0;
+    for (const action of [...AUTHENTICATED_APP_ACTIONS, ...ADMIN_APP_ACTIONS]) {
+        if (await ensurePermission(strapi, role.id, action)) createdCount++;
+    }
+
+    const authenticatedRole = await strapi.db
+        .query("plugin::users-permissions.role")
+        .findOne({ where: { type: "authenticated" } });
+
+    if (authenticatedRole) {
+        for (const action of AUTHENTICATED_APP_ACTIONS) {
+            if (await ensurePermission(strapi, authenticatedRole.id, action)) {
+                createdCount++;
+            }
+        }
+    }
+
+    if (createdCount > 0) {
+        strapi.log.info(
+            `[app-admin] создано users-permissions permissions: ${createdCount}`
+        );
+    }
+};
+
 export default {
     /**
      * An asynchronous register function that runs before
@@ -17,6 +126,12 @@ export default {
      * Идемпотентен: пропускает записи, у которых uid уже выставлен.
      */
     async bootstrap({ strapi }: { strapi: any }) {
+        try {
+            await ensureAppAdminRole(strapi);
+        } catch (e) {
+            strapi.log.error(`[app-admin] bootstrap не выполнен: ${e}`);
+        }
+
         try {
             const pageSize = 200;
             let totalUpdated = 0;
