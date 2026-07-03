@@ -977,6 +977,255 @@ const normalizePlatformSettingsPayload = (body: any) => {
     };
 };
 
+const NOTIFICATION_EVENTS = [
+    "document_created",
+    "document_assigned",
+    "document_signed",
+    "document_completed",
+    "document_cancelled",
+    "document_overdue",
+    "signature_error",
+    "manual_reminder",
+];
+
+const NOTIFICATION_CHANNELS = ["internal", "email", "sms"];
+
+const DEFAULT_RECIPIENT_RULES = {
+    author: false,
+    pendingSigners: false,
+    allSigners: false,
+    admins: false,
+    departmentManager: false,
+    customEmails: [],
+};
+
+const DEFAULT_NOTIFICATION_TEMPLATES = [
+    {
+        code: "document_assigned_internal",
+        name: "Документ назначен на подпись",
+        event: "document_assigned",
+        channel: "internal",
+        enabled: true,
+        subject: "Новый документ на подпись",
+        body: "Вам назначен документ {{title}} (#{{uid}}). Срок: {{deadline}}.",
+        recipientRules: { ...DEFAULT_RECIPIENT_RULES, pendingSigners: true },
+        sendDelayMinutes: 0,
+        isSystem: true,
+    },
+    {
+        code: "manual_reminder_internal",
+        name: "Ручное напоминание подписанту",
+        event: "manual_reminder",
+        channel: "internal",
+        enabled: true,
+        subject: "Напоминание о подписи",
+        body: "Документ {{title}} ожидает вашей подписи.",
+        recipientRules: { ...DEFAULT_RECIPIENT_RULES, pendingSigners: true },
+        sendDelayMinutes: 0,
+        isSystem: true,
+    },
+    {
+        code: "document_completed_internal",
+        name: "Документ подписан полностью",
+        event: "document_completed",
+        channel: "internal",
+        enabled: true,
+        subject: "Документ завершен",
+        body: "Документ {{title}} (#{{uid}}) подписан всеми участниками.",
+        recipientRules: { ...DEFAULT_RECIPIENT_RULES, author: true },
+        sendDelayMinutes: 0,
+        isSystem: true,
+    },
+    {
+        code: "document_cancelled_internal",
+        name: "Документ отменен",
+        event: "document_cancelled",
+        channel: "internal",
+        enabled: true,
+        subject: "Документ отменен",
+        body: "Документ {{title}} отменен. Причина: {{reason}}.",
+        recipientRules: {
+            ...DEFAULT_RECIPIENT_RULES,
+            author: true,
+            allSigners: true,
+        },
+        sendDelayMinutes: 0,
+        isSystem: true,
+    },
+    {
+        code: "document_overdue_internal",
+        name: "Просрочен срок подписания",
+        event: "document_overdue",
+        channel: "internal",
+        enabled: true,
+        subject: "Просрочен срок подписания",
+        body: "Документ {{title}} просрочен. Текущий подписант: {{signerName}}.",
+        recipientRules: {
+            ...DEFAULT_RECIPIENT_RULES,
+            author: true,
+            pendingSigners: true,
+        },
+        sendDelayMinutes: 0,
+        repeatEveryHours: 24,
+        maxRepeats: 3,
+        isSystem: true,
+    },
+    {
+        code: "signature_error_internal",
+        name: "Ошибка подписания",
+        event: "signature_error",
+        channel: "internal",
+        enabled: true,
+        subject: "Ошибка ЭЦП",
+        body: "При подписании документа {{title}} произошла ошибка: {{errorMessage}}.",
+        recipientRules: { ...DEFAULT_RECIPIENT_RULES, admins: true },
+        sendDelayMinutes: 0,
+        isSystem: true,
+    },
+];
+
+const normalizeRecipientRules = (value: any) => {
+    const source = value && typeof value === "object" ? value : {};
+    const customEmails = Array.isArray(source.customEmails)
+        ? source.customEmails
+              .map((item: any) => cleanString(item).toLowerCase())
+              .filter((item: string) => item && isEmail(item))
+        : [];
+
+    return {
+        author: Boolean(source.author),
+        pendingSigners: Boolean(source.pendingSigners),
+        allSigners: Boolean(source.allSigners),
+        admins: Boolean(source.admins),
+        departmentManager: Boolean(source.departmentManager),
+        customEmails: Array.from(new Set(customEmails)),
+    };
+};
+
+const normalizeTemplateCode = (value: any) =>
+    cleanString(value)
+        .toLowerCase()
+        .replace(/[^a-z0-9_:-]+/g, "_")
+        .replace(/^_+|_+$/g, "")
+        .slice(0, 80);
+
+const normalizeNotificationTemplatePayload = (
+    body: any,
+    existingTemplate: any = null
+) => {
+    const event = cleanString(body.event || existingTemplate?.event);
+    const channel = cleanString(body.channel || existingTemplate?.channel);
+    const code =
+        normalizeTemplateCode(body.code) ||
+        normalizeTemplateCode(existingTemplate?.code) ||
+        normalizeTemplateCode(`${event}_${channel}`);
+    const name = cleanString(body.name);
+    const bodyText = cleanString(body.body);
+    const sendDelayMinutes = normalizeIntegerSetting(
+        body.sendDelayMinutes,
+        existingTemplate?.sendDelayMinutes || 0,
+        0,
+        525600,
+        false
+    );
+    const repeatEveryHours = normalizeIntegerSetting(
+        body.repeatEveryHours,
+        existingTemplate?.repeatEveryHours || null,
+        1,
+        8760
+    );
+    const maxRepeats = normalizeIntegerSetting(
+        body.maxRepeats,
+        existingTemplate?.maxRepeats || null,
+        1,
+        365
+    );
+
+    if (!code) return { error: "Укажите код шаблона" };
+    if (!name) return { error: "Укажите название шаблона" };
+    if (!bodyText) return { error: "Укажите текст уведомления" };
+    if (!NOTIFICATION_EVENTS.includes(event)) {
+        return { error: "Некорректное событие уведомления" };
+    }
+    if (!NOTIFICATION_CHANNELS.includes(channel)) {
+        return { error: "Некорректный канал уведомления" };
+    }
+    if (sendDelayMinutes === undefined) {
+        return { error: "Некорректная задержка отправки" };
+    }
+    if (repeatEveryHours === undefined) {
+        return { error: "Некорректный период повтора" };
+    }
+    if (maxRepeats === undefined) {
+        return { error: "Некорректный лимит повторов" };
+    }
+
+    return {
+        data: {
+            code,
+            name,
+            event,
+            channel,
+            enabled: Boolean(body.enabled),
+            subject: cleanString(body.subject),
+            body: bodyText,
+            recipientRules: normalizeRecipientRules(body.recipientRules),
+            sendDelayMinutes,
+            repeatEveryHours,
+            maxRepeats,
+            isSystem: Boolean(existingTemplate?.isSystem || body.isSystem),
+        },
+    };
+};
+
+const toSafeNotificationTemplate = (template: any) => ({
+    id: template.id,
+    documentId: template.documentId,
+    code: template.code,
+    name: template.name,
+    event: template.event,
+    channel: template.channel,
+    enabled: Boolean(template.enabled),
+    subject: template.subject || "",
+    body: template.body || "",
+    recipientRules: {
+        ...DEFAULT_RECIPIENT_RULES,
+        ...(template.recipientRules || {}),
+        customEmails: Array.isArray(template.recipientRules?.customEmails)
+            ? template.recipientRules.customEmails
+            : [],
+    },
+    sendDelayMinutes: template.sendDelayMinutes || 0,
+    repeatEveryHours: template.repeatEveryHours || null,
+    maxRepeats: template.maxRepeats || null,
+    isSystem: Boolean(template.isSystem),
+    createdAt: template.createdAt,
+    updatedAt: template.updatedAt,
+});
+
+const ensureDefaultNotificationTemplates = async (strapi: any) => {
+    for (const template of DEFAULT_NOTIFICATION_TEMPLATES) {
+        const existing = await strapi.db
+            .query("api::notification-template.notification-template")
+            .findOne({ where: { code: template.code } });
+
+        if (!existing) {
+            await strapi.db
+                .query("api::notification-template.notification-template")
+                .create({ data: template });
+        }
+    }
+};
+
+const findNotificationTemplateById = async (strapi: any, id: any) => {
+    const numericId = Number(id);
+    if (!Number.isFinite(numericId)) return null;
+
+    return strapi.db
+        .query("api::notification-template.notification-template")
+        .findOne({ where: { id: numericId } });
+};
+
 const findDocumentForAccess = async (strapi: any, id: string | number) => {
     try {
         const document = await strapi
@@ -1886,6 +2135,149 @@ export default factories.createCoreController(
             );
 
             return ctx.send({ data: toSafePlatformSettings(updated) });
+        },
+
+        /**
+         * GET /api/admin/notification-templates
+         */
+        async findAdminNotificationTemplates(ctx) {
+            const admin = await requireAppAdmin(ctx, strapi);
+            if (!admin) return;
+
+            await ensureDefaultNotificationTemplates(strapi);
+
+            const templates = await strapi.db
+                .query("api::notification-template.notification-template")
+                .findMany({
+                    orderBy: [
+                        { event: "asc" },
+                        { channel: "asc" },
+                        { name: "asc" },
+                    ],
+                });
+
+            return ctx.send({
+                data: templates.map(toSafeNotificationTemplate),
+                meta: {
+                    total: templates.length,
+                    events: NOTIFICATION_EVENTS,
+                    channels: NOTIFICATION_CHANNELS,
+                },
+            });
+        },
+
+        /**
+         * POST /api/admin/notification-templates
+         */
+        async createAdminNotificationTemplate(ctx) {
+            const admin = await requireAppAdmin(ctx, strapi);
+            if (!admin) return;
+
+            const normalized = normalizeNotificationTemplatePayload(
+                ctx.request.body || {}
+            );
+            if (normalized.error) return ctx.badRequest(normalized.error);
+
+            const sameCode = await strapi.db
+                .query("api::notification-template.notification-template")
+                .findOne({ where: { code: normalized.data.code } });
+            if (sameCode) {
+                return ctx.badRequest("Шаблон с таким кодом уже существует");
+            }
+
+            const created = await strapi.db
+                .query("api::notification-template.notification-template")
+                .create({ data: normalized.data });
+
+            await createAuditLog(strapi, ctx, "notification_template_created", {
+                actor: admin,
+                metadata: {
+                    templateId: created.id,
+                    code: created.code,
+                    event: created.event,
+                    channel: created.channel,
+                },
+            });
+
+            return ctx.created({ data: toSafeNotificationTemplate(created) });
+        },
+
+        /**
+         * PUT /api/admin/notification-templates/:id
+         */
+        async updateAdminNotificationTemplate(ctx) {
+            const admin = await requireAppAdmin(ctx, strapi);
+            if (!admin) return;
+
+            const { id } = ctx.params;
+            const template = await findNotificationTemplateById(strapi, id);
+            if (!template) return ctx.notFound("Шаблон уведомления не найден");
+
+            const normalized = normalizeNotificationTemplatePayload(
+                ctx.request.body || {},
+                template
+            );
+            if (normalized.error) return ctx.badRequest(normalized.error);
+
+            const sameCode = await strapi.db
+                .query("api::notification-template.notification-template")
+                .findOne({ where: { code: normalized.data.code } });
+            if (sameCode && Number(sameCode.id) !== Number(template.id)) {
+                return ctx.badRequest("Шаблон с таким кодом уже существует");
+            }
+
+            const updated = await strapi.db
+                .query("api::notification-template.notification-template")
+                .update({
+                    where: { id: template.id },
+                    data: {
+                        ...normalized.data,
+                        isSystem: Boolean(template.isSystem),
+                    },
+                });
+
+            await createAuditLog(strapi, ctx, "notification_template_updated", {
+                actor: admin,
+                metadata: {
+                    templateId: updated.id,
+                    code: updated.code,
+                    event: updated.event,
+                    channel: updated.channel,
+                },
+            });
+
+            return ctx.send({ data: toSafeNotificationTemplate(updated) });
+        },
+
+        /**
+         * DELETE /api/admin/notification-templates/:id
+         */
+        async deleteAdminNotificationTemplate(ctx) {
+            const admin = await requireAppAdmin(ctx, strapi);
+            if (!admin) return;
+
+            const { id } = ctx.params;
+            const template = await findNotificationTemplateById(strapi, id);
+            if (!template) return ctx.notFound("Шаблон уведомления не найден");
+            if (template.isSystem) {
+                return ctx.badRequest("Системный шаблон можно отключить, но нельзя удалить");
+            }
+
+            await strapi.db
+                .query("api::notification-template.notification-template")
+                .delete({ where: { id: template.id } });
+
+            await createAuditLog(strapi, ctx, "notification_template_deleted", {
+                actor: admin,
+                metadata: {
+                    templateId: template.id,
+                    code: template.code,
+                    event: template.event,
+                    channel: template.channel,
+                },
+            });
+
+            return ctx.send({ data: { id: template.id } });
         },
 
         /**

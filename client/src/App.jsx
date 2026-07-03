@@ -12,6 +12,7 @@ import AdminDocumentTypesPage from "./components/AdminDocumentTypesPage";
 import AdminAuditLogsPage from "./components/AdminAuditLogsPage";
 import AdminSignatureMonitoringPage from "./components/AdminSignatureMonitoringPage";
 import AdminPlatformSettingsPage from "./components/AdminPlatformSettingsPage";
+import AdminNotificationsPage from "./components/AdminNotificationsPage";
 import { ToastProvider } from "./components/Toast";
 import "./App.css";
 
@@ -69,6 +70,10 @@ function App() {
                             <Route
                                 path='admin/platform-settings'
                                 element={<AdminPlatformSettingsPage />}
+                            />
+                            <Route
+                                path='admin/notifications'
+                                element={<AdminNotificationsPage />}
                             />
                         </Route>
                     </Routes>

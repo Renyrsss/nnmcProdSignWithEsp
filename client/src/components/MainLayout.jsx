@@ -18,6 +18,7 @@ import {
     ClipboardList,
     ShieldCheck,
     Settings,
+    Bell,
 } from "lucide-react";
 
 export default function MainLayout() {
@@ -166,6 +167,15 @@ export default function MainLayout() {
             isActive: () =>
                 pathname === "/admin/platform-settings" ||
                 pathname.startsWith("/admin/platform-settings/"),
+        },
+        {
+            to: "/admin/notifications",
+            label: "Уведомления",
+            shortLabel: "Увед.",
+            icon: Bell,
+            isActive: () =>
+                pathname === "/admin/notifications" ||
+                pathname.startsWith("/admin/notifications/"),
         },
     ];
 

@@ -110,6 +110,39 @@ export const updateAdminPlatformSettings = async (payload) => {
     return response.data.data;
 };
 
+export const getAdminNotificationTemplates = async () => {
+    const response = await axios.get(`${API_URL}/admin/notification-templates`, {
+        headers: authHeaders(),
+    });
+    return response.data;
+};
+
+export const createAdminNotificationTemplate = async (payload) => {
+    const response = await axios.post(
+        `${API_URL}/admin/notification-templates`,
+        payload,
+        { headers: authHeaders() }
+    );
+    return response.data.data;
+};
+
+export const updateAdminNotificationTemplate = async (templateId, payload) => {
+    const response = await axios.put(
+        `${API_URL}/admin/notification-templates/${templateId}`,
+        payload,
+        { headers: authHeaders() }
+    );
+    return response.data.data;
+};
+
+export const deleteAdminNotificationTemplate = async (templateId) => {
+    const response = await axios.delete(
+        `${API_URL}/admin/notification-templates/${templateId}`,
+        { headers: authHeaders() }
+    );
+    return response.data.data;
+};
+
 export const getAdminUsers = async () => {
     const response = await axios.get(`${API_URL}/admin/users`, {
         headers: authHeaders(),

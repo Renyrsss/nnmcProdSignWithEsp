@@ -29,6 +29,9 @@ const EVENT_LABELS = {
     document_signature_error: "Ошибка подписи",
     document_signature_rechecked: "Проверка CMS",
     platform_settings_updated: "Настройки изменены",
+    notification_template_created: "Шаблон уведомления создан",
+    notification_template_updated: "Шаблон уведомления изменен",
+    notification_template_deleted: "Шаблон уведомления удален",
     document_deleted: "Документ удален",
 };
 
@@ -46,6 +49,9 @@ const EVENT_STYLES = {
     document_signature_error: "bg-rose-100 text-rose-800",
     document_signature_rechecked: "bg-cyan-100 text-cyan-800",
     platform_settings_updated: "bg-violet-100 text-violet-800",
+    notification_template_created: "bg-blue-100 text-blue-800",
+    notification_template_updated: "bg-purple-100 text-purple-800",
+    notification_template_deleted: "bg-red-100 text-red-800",
     document_deleted: "bg-red-100 text-red-800",
 };
 
@@ -79,6 +85,8 @@ const formatMetadata = (metadata) => {
     if (Array.isArray(metadata.changedFields)) {
         visible.push(`Поля: ${metadata.changedFields.join(", ")}`);
     }
+    if (metadata.code) visible.push(`Код: ${metadata.code}`);
+    if (metadata.channel) visible.push(`Канал: ${metadata.channel}`);
 
     if (visible.length > 0) return visible.join("; ");
     return JSON.stringify(metadata);

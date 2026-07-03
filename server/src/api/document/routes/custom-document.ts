@@ -43,6 +43,30 @@ export default {
             config: { policies: [], middlewares: [] },
         },
         {
+            method: "GET",
+            path: "/admin/notification-templates",
+            handler: "api::document.document.findAdminNotificationTemplates",
+            config: { policies: [], middlewares: [] },
+        },
+        {
+            method: "POST",
+            path: "/admin/notification-templates",
+            handler: "api::document.document.createAdminNotificationTemplate",
+            config: { policies: [], middlewares: [] },
+        },
+        {
+            method: "PUT",
+            path: "/admin/notification-templates/:id",
+            handler: "api::document.document.updateAdminNotificationTemplate",
+            config: { policies: [], middlewares: [] },
+        },
+        {
+            method: "DELETE",
+            path: "/admin/notification-templates/:id",
+            handler: "api::document.document.deleteAdminNotificationTemplate",
+            config: { policies: [], middlewares: [] },
+        },
+        {
             method: "POST",
             path: "/admin/documents/:id/recheck-signatures",
             handler: "api::document.document.recheckAdminDocumentSignatures",

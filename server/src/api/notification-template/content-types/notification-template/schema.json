@@ -1,0 +1,72 @@
+{
+  "kind": "collectionType",
+  "collectionName": "notification_templates",
+  "info": {
+    "singularName": "notification-template",
+    "pluralName": "notification-templates",
+    "displayName": "Notification Template",
+    "description": "Шаблоны и правила уведомлений платформы"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "code": {
+      "type": "string",
+      "required": true,
+      "unique": true
+    },
+    "name": {
+      "type": "string",
+      "required": true
+    },
+    "event": {
+      "type": "enumeration",
+      "enum": [
+        "document_created",
+        "document_assigned",
+        "document_signed",
+        "document_completed",
+        "document_cancelled",
+        "document_overdue",
+        "signature_error",
+        "manual_reminder"
+      ],
+      "required": true
+    },
+    "channel": {
+      "type": "enumeration",
+      "enum": ["internal", "email", "sms"],
+      "required": true
+    },
+    "enabled": {
+      "type": "boolean",
+      "default": true
+    },
+    "subject": {
+      "type": "string"
+    },
+    "body": {
+      "type": "text",
+      "required": true
+    },
+    "recipientRules": {
+      "type": "json"
+    },
+    "sendDelayMinutes": {
+      "type": "integer",
+      "default": 0
+    },
+    "repeatEveryHours": {
+      "type": "integer"
+    },
+    "maxRepeats": {
+      "type": "integer"
+    },
+    "isSystem": {
+      "type": "boolean",
+      "default": false
+    }
+  }
+}

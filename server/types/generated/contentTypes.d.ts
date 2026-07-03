@@ -469,6 +469,9 @@ export interface ApiAuditLogAuditLog extends Struct.CollectionTypeSchema {
         'document_signature_error',
         'document_signature_rechecked',
         'platform_settings_updated',
+        'notification_template_created',
+        'notification_template_updated',
+        'notification_template_deleted',
         'document_deleted',
       ]
     > &
@@ -637,6 +640,62 @@ export interface ApiDocumentDocument extends Struct.CollectionTypeSchema {
     >;
     title: Schema.Attribute.String & Schema.Attribute.Required;
     uid: Schema.Attribute.String & Schema.Attribute.Unique;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+  };
+}
+
+export interface ApiNotificationTemplateNotificationTemplate
+  extends Struct.CollectionTypeSchema {
+  collectionName: 'notification_templates';
+  info: {
+    description: '\u0428\u0430\u0431\u043B\u043E\u043D\u044B \u0438 \u043F\u0440\u0430\u0432\u0438\u043B\u0430 \u0443\u0432\u0435\u0434\u043E\u043C\u043B\u0435\u043D\u0438\u0439 \u043F\u043B\u0430\u0442\u0444\u043E\u0440\u043C\u044B';
+    displayName: 'Notification Template';
+    pluralName: 'notification-templates';
+    singularName: 'notification-template';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  attributes: {
+    body: Schema.Attribute.Text & Schema.Attribute.Required;
+    channel: Schema.Attribute.Enumeration<['internal', 'email', 'sms']> &
+      Schema.Attribute.Required;
+    code: Schema.Attribute.String &
+      Schema.Attribute.Required &
+      Schema.Attribute.Unique;
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+    enabled: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<true>;
+    event: Schema.Attribute.Enumeration<
+      [
+        'document_created',
+        'document_assigned',
+        'document_signed',
+        'document_completed',
+        'document_cancelled',
+        'document_overdue',
+        'signature_error',
+        'manual_reminder',
+      ]
+    > &
+      Schema.Attribute.Required;
+    isSystem: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<
+      'oneToMany',
+      'api::notification-template.notification-template'
+    > &
+      Schema.Attribute.Private;
+    maxRepeats: Schema.Attribute.Integer;
+    name: Schema.Attribute.String & Schema.Attribute.Required;
+    publishedAt: Schema.Attribute.DateTime;
+    recipientRules: Schema.Attribute.JSON;
+    repeatEveryHours: Schema.Attribute.Integer;
+    sendDelayMinutes: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<0>;
+    subject: Schema.Attribute.String;
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
       Schema.Attribute.Private;
@@ -1247,6 +1306,7 @@ declare module '@strapi/strapi' {
       'api::department.department': ApiDepartmentDepartment;
       'api::document-type.document-type': ApiDocumentTypeDocumentType;
       'api::document.document': ApiDocumentDocument;
+      'api::notification-template.notification-template': ApiNotificationTemplateNotificationTemplate;
       'api::platform-setting.platform-setting': ApiPlatformSettingPlatformSetting;
       'api::subdivision.subdivision': ApiSubdivisionSubdivision;
       'plugin::content-releases.release': PluginContentReleasesRelease;
