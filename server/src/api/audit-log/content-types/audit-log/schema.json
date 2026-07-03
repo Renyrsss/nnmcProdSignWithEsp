@@ -1,0 +1,73 @@
+{
+  "kind": "collectionType",
+  "collectionName": "audit_logs",
+  "info": {
+    "singularName": "audit-log",
+    "pluralName": "audit-logs",
+    "displayName": "Audit Log",
+    "description": "Журнал действий пользователей и администраторов"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "event": {
+      "type": "enumeration",
+      "enum": [
+        "document_created",
+        "document_opened",
+        "document_updated",
+        "document_signed",
+        "document_completed",
+        "document_revision_requested",
+        "document_cancelled",
+        "document_signer_reassigned",
+        "document_deadline_updated",
+        "document_reminder_requested",
+        "document_deleted"
+      ],
+      "required": true
+    },
+    "entityType": {
+      "type": "string",
+      "required": true
+    },
+    "entityId": {
+      "type": "integer"
+    },
+    "entityUid": {
+      "type": "string"
+    },
+    "document": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::document.document"
+    },
+    "actor": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "plugin::users-permissions.user"
+    },
+    "actorName": {
+      "type": "string"
+    },
+    "targetUser": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "plugin::users-permissions.user"
+    },
+    "targetUserName": {
+      "type": "string"
+    },
+    "ip": {
+      "type": "string"
+    },
+    "userAgent": {
+      "type": "text"
+    },
+    "metadata": {
+      "type": "json"
+    }
+  }
+}

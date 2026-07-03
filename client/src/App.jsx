@@ -9,6 +9,7 @@ import BatchSignPage from "./components/BatchSignPage";
 import AdminDocumentsPage from "./components/AdminDocumentsPage";
 import AdminUsersPage from "./components/AdminUsersPage";
 import AdminDocumentTypesPage from "./components/AdminDocumentTypesPage";
+import AdminAuditLogsPage from "./components/AdminAuditLogsPage";
 import { ToastProvider } from "./components/Toast";
 import "./App.css";
 
@@ -54,6 +55,10 @@ function App() {
                             <Route
                                 path='admin/document-types'
                                 element={<AdminDocumentTypesPage />}
+                            />
+                            <Route
+                                path='admin/audit-logs'
+                                element={<AdminAuditLogsPage />}
                             />
                         </Route>
                     </Routes>

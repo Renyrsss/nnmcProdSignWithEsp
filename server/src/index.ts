@@ -60,6 +60,7 @@ const AUTHENTICATED_APP_ACTIONS = [
 const ADMIN_APP_ACTIONS = [
     "api::document.document.findAdminDocuments",
     "api::document.document.findAdminDocument",
+    "api::document.document.findAdminAuditLogs",
     "api::document.document.cancelAdminDocument",
     "api::document.document.reassignAdminDocumentSigner",
     "api::document.document.updateAdminDocumentDeadline",

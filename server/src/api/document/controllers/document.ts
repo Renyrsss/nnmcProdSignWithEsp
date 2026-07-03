@@ -445,6 +445,107 @@ const getAssignedUserIdsFromSigners = (signers: any[]) =>
         )
     );
 
+const getRequestIp = (ctx: any) =>
+    String(
+        ctx.request.headers["x-forwarded-for"] ||
+            ctx.request.ip ||
+            ctx.req?.socket?.remoteAddress ||
+            ""
+    )
+        .split(",")[0]
+        .trim();
+
+const createAuditLog = async (
+    strapi: any,
+    ctx: any,
+    event: string,
+    params: {
+        document?: any;
+        actor?: any;
+        targetUser?: any;
+        metadata?: Record<string, any>;
+    } = {}
+) => {
+    try {
+        const actor = params.actor || ctx.state.user || null;
+        const document = params.document || null;
+        const targetUser = params.targetUser || null;
+
+        await strapi.db.query("api::audit-log.audit-log").create({
+            data: {
+                event,
+                entityType: document ? "document" : "system",
+                entityId: document?.id || null,
+                entityUid: document?.uid || document?.documentId || null,
+                document: document?.id || null,
+                actor: actor?.id || null,
+                actorName: actor
+                    ? actor.fullName || actor.username || actor.email || String(actor.id)
+                    : null,
+                targetUser: targetUser?.id || null,
+                targetUserName: targetUser
+                    ? targetUser.fullName ||
+                      targetUser.username ||
+                      targetUser.email ||
+                      String(targetUser.id)
+                    : null,
+                ip: getRequestIp(ctx),
+                userAgent: String(ctx.request.headers["user-agent"] || ""),
+                metadata: params.metadata || {},
+            },
+        });
+    } catch (error) {
+        strapi.log.warn(`[audit-log] событие ${event} не записано: ${error}`);
+    }
+};
+
+const buildAdminAuditLogFilters = (query: any) => {
+    const andFilters: any[] = [];
+
+    const event = normalizeQueryValue(query.event);
+    if (event && event !== "all") {
+        andFilters.push({ event });
+    }
+
+    const documentId = normalizeQueryValue(query.documentId);
+    if (documentId && documentId !== "all") {
+        andFilters.push({ document: { id: Number(documentId) } });
+    }
+
+    const actorId = normalizeQueryValue(query.actorId);
+    if (actorId && actorId !== "all") {
+        andFilters.push({ actor: { id: Number(actorId) } });
+    }
+
+    const targetUserId = normalizeQueryValue(query.targetUserId);
+    if (targetUserId && targetUserId !== "all") {
+        andFilters.push({ targetUser: { id: Number(targetUserId) } });
+    }
+
+    const dateFrom = normalizeQueryValue(query.dateFrom);
+    const dateTo = normalizeQueryValue(query.dateTo);
+    if (dateFrom || dateTo) {
+        const createdAt: any = {};
+        if (dateFrom) createdAt.$gte = new Date(`${dateFrom}T00:00:00.000`);
+        if (dateTo) createdAt.$lte = new Date(`${dateTo}T23:59:59.999`);
+        andFilters.push({ createdAt });
+    }
+
+    const q = cleanString(normalizeQueryValue(query.q));
+    if (q) {
+        andFilters.push({
+            $or: [
+                { actorName: { $containsi: q } },
+                { targetUserName: { $containsi: q } },
+                { entityUid: { $containsi: q.replace(/^#/, "") } },
+                { document: { title: { $containsi: q } } },
+            ],
+        });
+    }
+
+    return andFilters.length > 0 ? { $and: andFilters } : undefined;
+};
+
 const findDocumentForAccess = async (strapi: any, id: string | number) => {
     try {
         const document = await strapi
@@ -481,6 +582,11 @@ const canReadOrUpdateDocument = (document: any, user: any, isAdmin: boolean) => 
     return isCreator || isAssigned;
 };
 
+const countSignedHistory = (history: any) =>
+    Array.isArray(history)
+        ? history.filter((item) => item?.signedAt && item?.userId).length
+        : 0;
+
 export default factories.createCoreController(
     "api::document.document",
     ({ strapi }) => ({
@@ -511,6 +617,10 @@ export default factories.createCoreController(
                 } as any);
 
             const sanitized = await this.sanitizeOutput(documents?.[0], ctx);
+            await createAuditLog(strapi, ctx, "document_opened", {
+                document: documents?.[0],
+                actor: fullUser,
+            });
             return ctx.send({ data: sanitized });
         },
 
@@ -526,7 +636,31 @@ export default factories.createCoreController(
                 },
             };
 
-            return super.create(ctx);
+            const response = await super.create(ctx);
+            const responseData =
+                response?.data ||
+                (ctx.body as any)?.data ||
+                (ctx.response?.body as any)?.data ||
+                {};
+            const createdId =
+                responseData.id ||
+                responseData.documentId ||
+                response?.id ||
+                null;
+            const createdDocument = createdId
+                ? await getDocumentByNumericOrDocumentId(strapi, createdId)
+                : null;
+            await createAuditLog(strapi, ctx, "document_created", {
+                document: createdDocument,
+                metadata: {
+                    title: ctx.request.body?.data?.title,
+                    status: ctx.request.body?.data?.status,
+                    signerCount: Array.isArray(ctx.request.body?.data?.signers)
+                        ? ctx.request.body.data.signers.length
+                        : 0,
+                },
+            });
+            return response;
         },
 
         async update(ctx) {
@@ -543,7 +677,41 @@ export default factories.createCoreController(
                 return ctx.forbidden("Нет доступа к этому документу");
             }
 
-            return super.update(ctx);
+            const previousSignedCount = countSignedHistory(
+                document.signatureHistory
+            );
+            const previousStatus = document.status;
+            const updateData = ctx.request.body?.data || {};
+
+            const response = await super.update(ctx);
+            const updated = await getDocumentByNumericOrDocumentId(
+                strapi,
+                document.id
+            );
+            const updatedSignedCount = countSignedHistory(
+                updated?.signatureHistory
+            );
+
+            let event = "document_updated";
+            if (updatedSignedCount > previousSignedCount) {
+                event = "document_signed";
+            }
+            if (updated?.status === "completed" && previousStatus !== "completed") {
+                event = "document_completed";
+            }
+            if (updated?.status === "revision" && previousStatus !== "revision") {
+                event = "document_revision_requested";
+            }
+
+            await createAuditLog(strapi, ctx, event, {
+                document: updated || document,
+                metadata: {
+                    previousStatus,
+                    status: updated?.status || updateData.status,
+                    changedFields: Object.keys(updateData),
+                },
+            });
+            return response;
         },
 
         async delete(ctx) {
@@ -561,7 +729,12 @@ export default factories.createCoreController(
                 return ctx.forbidden("Удалить документ может только автор");
             }
 
-            return super.delete(ctx);
+            const response = await super.delete(ctx);
+            await createAuditLog(strapi, ctx, "document_deleted", {
+                document,
+                metadata: { title: document.title, status: document.status },
+            });
+            return response;
         },
 
         /**
@@ -806,6 +979,11 @@ export default factories.createCoreController(
                     where: { id: document.id },
                     populate: getDocumentPopulate(),
                 });
+            await createAuditLog(strapi, ctx, "document_cancelled", {
+                document: updated,
+                actor: admin,
+                metadata: { reason },
+            });
             const sanitized = await this.sanitizeOutput(updated, ctx);
             return ctx.send({ data: sanitized });
         },
@@ -919,6 +1097,18 @@ export default factories.createCoreController(
                     where: { id: document.id },
                     populate: getDocumentPopulate(),
                 });
+            await createAuditLog(strapi, ctx, "document_signer_reassigned", {
+                document: updated,
+                actor: admin,
+                targetUser: newUser,
+                metadata: {
+                    reason,
+                    fromUserId,
+                    fromUserName: previousSigner.userName,
+                    toUserId: newUser.id,
+                    toUserName: newUser.fullName || newUser.username,
+                },
+            });
             const sanitized = await this.sanitizeOutput(updated, ctx);
             return ctx.send({ data: sanitized });
         },
@@ -973,6 +1163,15 @@ export default factories.createCoreController(
                     where: { id: document.id },
                     populate: getDocumentPopulate(),
                 });
+            await createAuditLog(strapi, ctx, "document_deadline_updated", {
+                document: updated,
+                actor: admin,
+                metadata: {
+                    reason,
+                    previousDeadlineAt: document.signingDeadlineAt || null,
+                    signingDeadlineAt,
+                },
+            });
             const sanitized = await this.sanitizeOutput(updated, ctx);
             return ctx.send({ data: sanitized });
         },
@@ -1033,8 +1232,89 @@ export default factories.createCoreController(
                     where: { id: document.id },
                     populate: getDocumentPopulate(),
                 });
+            await createAuditLog(strapi, ctx, "document_reminder_requested", {
+                document: updated,
+                actor: admin,
+                metadata: {
+                    reason,
+                    signerId: signer?.userId || null,
+                    signerName: signer?.userName || null,
+                },
+            });
             const sanitized = await this.sanitizeOutput(updated, ctx);
             return ctx.send({ data: sanitized });
+        },
+
+        /**
+         * GET /api/admin/audit-logs
+         */
+        async findAdminAuditLogs(ctx) {
+            const admin = await requireAppAdmin(ctx, strapi);
+            if (!admin) return;
+
+            const page = toPositiveInt(ctx.query.page, 1, 100000);
+            const pageSize = toPositiveInt(ctx.query.pageSize, 50, 200);
+            const filters = buildAdminAuditLogFilters(ctx.query);
+
+            const [logs, total] = await Promise.all([
+                strapi.db.query("api::audit-log.audit-log").findMany({
+                    where: filters,
+                    orderBy: [{ createdAt: "desc" }],
+                    offset: (page - 1) * pageSize,
+                    limit: pageSize,
+                    populate: ["document", "actor", "targetUser"],
+                }),
+                strapi.db.query("api::audit-log.audit-log").count({
+                    where: filters,
+                }),
+            ]);
+
+            return ctx.send({
+                data: logs.map((log: any) => ({
+                    id: log.id,
+                    event: log.event,
+                    entityType: log.entityType,
+                    entityId: log.entityId,
+                    entityUid: log.entityUid,
+                    actorName: log.actorName,
+                    targetUserName: log.targetUserName,
+                    ip: log.ip,
+                    userAgent: log.userAgent,
+                    metadata: log.metadata || {},
+                    createdAt: log.createdAt,
+                    document: log.document
+                        ? {
+                              id: log.document.id,
+                              documentId: log.document.documentId,
+                              uid: log.document.uid,
+                              title: log.document.title,
+                              status: log.document.status,
+                          }
+                        : null,
+                    actor: log.actor
+                        ? {
+                              id: log.actor.id,
+                              username: log.actor.username,
+                              fullName: log.actor.fullName,
+                              email: log.actor.email,
+                          }
+                        : null,
+                    targetUser: log.targetUser
+                        ? {
+                              id: log.targetUser.id,
+                              username: log.targetUser.username,
+                              fullName: log.targetUser.fullName,
+                              email: log.targetUser.email,
+                          }
+                        : null,
+                })),
+                meta: {
+                    total,
+                    page,
+                    pageSize,
+                    pageCount: Math.ceil(total / pageSize),
+                },
+            });
         },
 
         /**

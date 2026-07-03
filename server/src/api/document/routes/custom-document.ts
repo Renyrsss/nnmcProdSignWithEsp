@@ -19,6 +19,12 @@ export default {
             config: { policies: [], middlewares: [] },
         },
         {
+            method: "GET",
+            path: "/admin/audit-logs",
+            handler: "api::document.document.findAdminAuditLogs",
+            config: { policies: [], middlewares: [] },
+        },
+        {
             method: "POST",
             path: "/admin/documents/:id/cancel",
             handler: "api::document.document.cancelAdminDocument",

@@ -15,6 +15,7 @@ import {
     Shield,
     Users,
     FileCog,
+    ClipboardList,
 } from "lucide-react";
 
 export default function MainLayout() {
@@ -136,6 +137,15 @@ export default function MainLayout() {
             isActive: () =>
                 pathname === "/admin/document-types" ||
                 pathname.startsWith("/admin/document-types/"),
+        },
+        {
+            to: "/admin/audit-logs",
+            label: "Журнал аудита",
+            shortLabel: "Журнал",
+            icon: ClipboardList,
+            isActive: () =>
+                pathname === "/admin/audit-logs" ||
+                pathname.startsWith("/admin/audit-logs/"),
         },
     ];
 

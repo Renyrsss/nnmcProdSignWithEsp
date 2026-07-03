@@ -69,6 +69,15 @@ export const requestAdminDocumentReminder = async (documentId, payload) => {
     return response.data.data;
 };
 
+export const getAdminAuditLogs = async (params = {}) => {
+    const query = buildQuery(params);
+    const response = await axios.get(
+        `${API_URL}/admin/audit-logs${query ? `?${query}` : ""}`,
+        { headers: authHeaders() }
+    );
+    return response.data;
+};
+
 export const getAdminUsers = async () => {
     const response = await axios.get(`${API_URL}/admin/users`, {
         headers: authHeaders(),
