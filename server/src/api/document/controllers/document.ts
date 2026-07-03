@@ -303,6 +303,9 @@ const getDocumentPopulate = () =>
                 role: { fields: ["id", "name", "type"] },
             },
         },
+        archivedBy: {
+            fields: ["id", "username", "fullName", "email"],
+        },
         documentType: { fields: ["id", "name"] },
         originalFile: {
             fields: ["id", "name", "hash", "ext", "mime", "size", "url"],
@@ -385,6 +388,23 @@ const buildAdminDocumentFilters = (query: any) => {
     return andFilters.length > 0 ? { $and: andFilters } : undefined;
 };
 
+const buildAdminArchiveFilters = (query: any) => {
+    const baseFilters = buildAdminDocumentFilters(query);
+    const archiveFilters: any[] = [{ archivedAt: { $notNull: true } }];
+
+    const archivedFrom = normalizeQueryValue(query.archivedFrom);
+    const archivedTo = normalizeQueryValue(query.archivedTo);
+    if (archivedFrom || archivedTo) {
+        const archivedAt: any = {};
+        if (archivedFrom) archivedAt.$gte = new Date(`${archivedFrom}T00:00:00.000`);
+        if (archivedTo) archivedAt.$lte = new Date(`${archivedTo}T23:59:59.999`);
+        archiveFilters.push({ archivedAt });
+    }
+
+    if (baseFilters?.$and?.length) archiveFilters.push(...baseFilters.$and);
+    return { $and: archiveFilters };
+};
+
 const toPositiveInt = (value: any, fallback: number, max: number) => {
     const parsed = Number.parseInt(String(value || ""), 10);
     if (!Number.isFinite(parsed) || parsed < 1) return fallback;
@@ -392,6 +412,14 @@ const toPositiveInt = (value: any, fallback: number, max: number) => {
 };
 
 const ACTIVE_DOCUMENT_STATUSES = new Set(["pending", "in_progress", "revision"]);
+const ARCHIVABLE_DOCUMENT_STATUSES = new Set(["completed", "cancelled"]);
+
+const addDaysIso = (date: Date, days: number | null | undefined) => {
+    if (!days) return null;
+    const result = new Date(date.getTime());
+    result.setDate(result.getDate() + days);
+    return result.toISOString();
+};
 
 const appendAdminAction = (
     document: any,
@@ -1492,6 +1520,62 @@ const buildDocumentsReportCsv = (documents: any[]) => {
     return toCsv(rows);
 };
 
+const toFileSnapshot = (file: any) =>
+    file
+        ? {
+              id: file.id,
+              name: file.name,
+              ext: file.ext,
+              mime: file.mime,
+              size: file.size,
+              url: file.url,
+          }
+        : null;
+
+const buildArchiveExportPayload = (document: any) => ({
+    exportedAt: new Date().toISOString(),
+    document: {
+        id: document.id,
+        documentId: document.documentId,
+        uid: document.uid,
+        title: document.title,
+        status: document.status,
+        signatureType: document.signatureType,
+        signatureSequential: Boolean(document.signatureSequential),
+        createdAt: document.createdAt,
+        updatedAt: document.updatedAt,
+        signingDeadlineAt: document.signingDeadlineAt || null,
+        cancellationReason: document.cancellationReason || null,
+        archivedAt: document.archivedAt || null,
+        archiveReason: document.archiveReason || null,
+        retentionUntil: document.retentionUntil || null,
+        archivedBy: document.archivedBy
+            ? {
+                  id: document.archivedBy.id,
+                  name: getUserDisplayName(document.archivedBy),
+                  email: document.archivedBy.email,
+              }
+            : null,
+        creator: document.creator
+            ? {
+                  id: document.creator.id,
+                  name: getUserDisplayName(document.creator),
+                  email: document.creator.email,
+                  department: document.creator.department?.name || null,
+              }
+            : null,
+        documentType: document.documentType?.name || null,
+        subdivision: document.subdivision?.name || null,
+        originalFile: toFileSnapshot(document.originalFile),
+        currentFile: toFileSnapshot(document.currentFile),
+    },
+    signers: getDocumentSigners(document),
+    signatureHistory: getSignatureHistory(document),
+    adminActionHistory: Array.isArray(document.adminActionHistory)
+        ? document.adminActionHistory
+        : [],
+});
+
 const findDocumentForAccess = async (strapi: any, id: string | number) => {
     try {
         const document = await strapi
@@ -1907,6 +1991,211 @@ export default factories.createCoreController(
                 `attachment; filename="documents-report-${exportedAt}.csv"`
             );
             return ctx.send(`\uFEFF${csv}`);
+        },
+
+        /**
+         * GET /api/admin/archive
+         */
+        async findAdminArchive(ctx) {
+            const admin = await requireAppAdmin(ctx, strapi);
+            if (!admin) return;
+
+            const page = toPositiveInt(ctx.query.page, 1, 100000);
+            const pageSize = toPositiveInt(ctx.query.pageSize, 50, 200);
+            const filters = buildAdminArchiveFilters(ctx.query);
+
+            const [documents, total] = await Promise.all([
+                strapi.documents("api::document.document").findMany({
+                    filters,
+                    populate: getDocumentPopulate(),
+                    sort: { archivedAt: "desc" } as any,
+                    start: (page - 1) * pageSize,
+                    limit: pageSize,
+                } as any),
+                strapi.documents("api::document.document").count({
+                    filters,
+                } as any),
+            ]);
+
+            const sanitized = await this.sanitizeOutput(documents, ctx);
+
+            return ctx.send({
+                data: sanitized,
+                meta: {
+                    total,
+                    page,
+                    pageSize,
+                    pageCount: Math.ceil(total / pageSize),
+                },
+            });
+        },
+
+        /**
+         * POST /api/admin/documents/:id/archive
+         */
+        async archiveAdminDocument(ctx) {
+            const admin = await requireAppAdmin(ctx, strapi);
+            if (!admin) return;
+
+            const { id } = ctx.params;
+            const reason = cleanString(ctx.request.body?.reason);
+            if (reason.length < 3) {
+                return ctx.badRequest("Укажите причину архивации документа");
+            }
+
+            const document = await getDocumentByNumericOrDocumentId(strapi, id, [
+                "creator",
+                "assigned_users",
+                "archivedBy",
+            ]);
+            if (!document) return ctx.notFound("Документ не найден");
+            if (document.archivedAt) return ctx.badRequest("Документ уже в архиве");
+            if (!ARCHIVABLE_DOCUMENT_STATUSES.has(document.status)) {
+                return ctx.badRequest(
+                    "В архив можно перенести только завершенный или отмененный документ"
+                );
+            }
+
+            const now = new Date();
+            const settings = toSafePlatformSettings(
+                await getOrCreatePlatformSettings(strapi)
+            );
+            const retentionDays = settings.retentionPolicyEnabled
+                ? settings.archiveRetentionDays || settings.documentRetentionDays
+                : null;
+
+            await strapi.db.query("api::document.document").update({
+                where: { id: document.id },
+                data: {
+                    archivedAt: now.toISOString(),
+                    archiveReason: reason,
+                    retentionUntil: addDaysIso(now, retentionDays),
+                    archivedBy: admin.id,
+                    adminActionHistory: appendAdminAction(
+                        document,
+                        admin,
+                        "archive",
+                        {
+                            reason,
+                            retentionUntil: addDaysIso(now, retentionDays),
+                        }
+                    ),
+                },
+            });
+
+            const updated = await strapi.db
+                .query("api::document.document")
+                .findOne({
+                    where: { id: document.id },
+                    populate: getDocumentPopulate(),
+                });
+
+            await createAuditLog(strapi, ctx, "document_archived", {
+                document: updated,
+                actor: admin,
+                metadata: {
+                    reason,
+                    retentionUntil: updated?.retentionUntil || null,
+                },
+            });
+
+            const sanitized = await this.sanitizeOutput(updated, ctx);
+            return ctx.send({ data: sanitized });
+        },
+
+        /**
+         * POST /api/admin/documents/:id/restore
+         */
+        async restoreAdminDocument(ctx) {
+            const admin = await requireAppAdmin(ctx, strapi);
+            if (!admin) return;
+
+            const { id } = ctx.params;
+            const reason = cleanString(ctx.request.body?.reason);
+
+            const document = await getDocumentByNumericOrDocumentId(strapi, id, [
+                "creator",
+                "assigned_users",
+                "archivedBy",
+            ]);
+            if (!document) return ctx.notFound("Документ не найден");
+            if (!document.archivedAt) return ctx.badRequest("Документ не в архиве");
+
+            await strapi.db.query("api::document.document").update({
+                where: { id: document.id },
+                data: {
+                    archivedAt: null,
+                    archiveReason: null,
+                    retentionUntil: null,
+                    archivedBy: null,
+                    adminActionHistory: appendAdminAction(
+                        document,
+                        admin,
+                        "restore_from_archive",
+                        {
+                            reason,
+                            previousArchivedAt: document.archivedAt,
+                            previousRetentionUntil: document.retentionUntil || null,
+                        }
+                    ),
+                },
+            });
+
+            const updated = await strapi.db
+                .query("api::document.document")
+                .findOne({
+                    where: { id: document.id },
+                    populate: getDocumentPopulate(),
+                });
+
+            await createAuditLog(strapi, ctx, "document_restored", {
+                document: updated,
+                actor: admin,
+                metadata: {
+                    reason,
+                    previousArchivedAt: document.archivedAt,
+                    previousRetentionUntil: document.retentionUntil || null,
+                },
+            });
+
+            const sanitized = await this.sanitizeOutput(updated, ctx);
+            return ctx.send({ data: sanitized });
+        },
+
+        /**
+         * GET /api/admin/documents/:id/archive-export
+         */
+        async exportAdminDocumentArchive(ctx) {
+            const admin = await requireAppAdmin(ctx, strapi);
+            if (!admin) return;
+
+            const { id } = ctx.params;
+            const document = await getDocumentByNumericOrDocumentId(
+                strapi,
+                id,
+                getDocumentPopulate()
+            );
+            if (!document) return ctx.notFound("Документ не найден");
+
+            const payload = buildArchiveExportPayload(document);
+            const exportedAt = new Date().toISOString().slice(0, 10);
+            const identifier = document.uid || document.documentId || document.id;
+
+            await createAuditLog(strapi, ctx, "document_archive_exported", {
+                document,
+                actor: admin,
+                metadata: {
+                    format: "json",
+                    archived: Boolean(document.archivedAt),
+                },
+            });
+
+            ctx.set("Content-Type", "application/json; charset=utf-8");
+            ctx.set(
+                "Content-Disposition",
+                `attachment; filename="document-${identifier}-archive-${exportedAt}.json"`
+            );
+            return ctx.send(JSON.stringify(payload, null, 2));
         },
 
         /**

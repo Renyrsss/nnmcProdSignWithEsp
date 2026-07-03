@@ -61,6 +61,30 @@ export default {
             config: { policies: [], middlewares: [] },
         },
         {
+            method: "GET",
+            path: "/admin/archive",
+            handler: "api::document.document.findAdminArchive",
+            config: { policies: [], middlewares: [] },
+        },
+        {
+            method: "POST",
+            path: "/admin/documents/:id/archive",
+            handler: "api::document.document.archiveAdminDocument",
+            config: { policies: [], middlewares: [] },
+        },
+        {
+            method: "POST",
+            path: "/admin/documents/:id/restore",
+            handler: "api::document.document.restoreAdminDocument",
+            config: { policies: [], middlewares: [] },
+        },
+        {
+            method: "GET",
+            path: "/admin/documents/:id/archive-export",
+            handler: "api::document.document.exportAdminDocumentArchive",
+            config: { policies: [], middlewares: [] },
+        },
+        {
             method: "POST",
             path: "/admin/notification-templates",
             handler: "api::document.document.createAdminNotificationTemplate",

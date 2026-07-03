@@ -73,6 +73,20 @@
     "signatureMonitoring": {
       "type": "json"
     },
+    "archivedAt": {
+      "type": "datetime"
+    },
+    "archiveReason": {
+      "type": "text"
+    },
+    "retentionUntil": {
+      "type": "datetime"
+    },
+    "archivedBy": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "plugin::users-permissions.user"
+    },
     "documentType": {
       "type": "relation",
       "relation": "manyToOne",

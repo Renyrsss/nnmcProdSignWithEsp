@@ -20,6 +20,7 @@ import {
     Settings,
     Bell,
     BarChart3,
+    Archive,
 } from "lucide-react";
 
 export default function MainLayout() {
@@ -186,6 +187,15 @@ export default function MainLayout() {
             isActive: () =>
                 pathname === "/admin/reports" ||
                 pathname.startsWith("/admin/reports/"),
+        },
+        {
+            to: "/admin/archive",
+            label: "Архив",
+            shortLabel: "Архив",
+            icon: Archive,
+            isActive: () =>
+                pathname === "/admin/archive" ||
+                pathname.startsWith("/admin/archive/"),
         },
     ];
 

@@ -47,6 +47,44 @@ export const exportAdminReportsCsv = async (params = {}) => {
     return response.data;
 };
 
+export const getAdminArchive = async (params = {}) => {
+    const query = buildQuery(params);
+    const response = await axios.get(
+        `${API_URL}/admin/archive${query ? `?${query}` : ""}`,
+        { headers: authHeaders() }
+    );
+    return response.data;
+};
+
+export const archiveAdminDocument = async (documentId, reason) => {
+    const response = await axios.post(
+        `${API_URL}/admin/documents/${documentId}/archive`,
+        { reason },
+        { headers: authHeaders() }
+    );
+    return response.data.data;
+};
+
+export const restoreAdminDocument = async (documentId, reason = "") => {
+    const response = await axios.post(
+        `${API_URL}/admin/documents/${documentId}/restore`,
+        { reason },
+        { headers: authHeaders() }
+    );
+    return response.data.data;
+};
+
+export const exportAdminDocumentArchive = async (documentId) => {
+    const response = await axios.get(
+        `${API_URL}/admin/documents/${documentId}/archive-export`,
+        {
+            headers: authHeaders(),
+            responseType: "blob",
+        }
+    );
+    return response.data;
+};
+
 export const getAdminDocument = async (id) => {
     const response = await axios.get(`${API_URL}/admin/documents/${id}`, {
         headers: authHeaders(),

@@ -473,6 +473,9 @@ export interface ApiAuditLogAuditLog extends Struct.CollectionTypeSchema {
         'notification_template_updated',
         'notification_template_deleted',
         'report_exported',
+        'document_archived',
+        'document_restored',
+        'document_archive_exported',
         'document_deleted',
       ]
     > &
@@ -598,6 +601,12 @@ export interface ApiDocumentDocument extends Struct.CollectionTypeSchema {
   };
   attributes: {
     adminActionHistory: Schema.Attribute.JSON;
+    archivedAt: Schema.Attribute.DateTime;
+    archivedBy: Schema.Attribute.Relation<
+      'manyToOne',
+      'plugin::users-permissions.user'
+    >;
+    archiveReason: Schema.Attribute.Text;
     assigned_users: Schema.Attribute.Relation<
       'manyToMany',
       'plugin::users-permissions.user'
@@ -623,6 +632,7 @@ export interface ApiDocumentDocument extends Struct.CollectionTypeSchema {
       Schema.Attribute.Private;
     originalFile: Schema.Attribute.Media<'files'>;
     publishedAt: Schema.Attribute.DateTime;
+    retentionUntil: Schema.Attribute.DateTime;
     signatureHistory: Schema.Attribute.JSON;
     signatureMonitoring: Schema.Attribute.JSON;
     signatureSequential: Schema.Attribute.Boolean &

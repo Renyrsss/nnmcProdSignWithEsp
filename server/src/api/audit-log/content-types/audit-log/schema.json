@@ -32,6 +32,9 @@
         "notification_template_updated",
         "notification_template_deleted",
         "report_exported",
+        "document_archived",
+        "document_restored",
+        "document_archive_exported",
         "document_deleted"
       ],
       "required": true

@@ -14,6 +14,7 @@ import AdminSignatureMonitoringPage from "./components/AdminSignatureMonitoringP
 import AdminPlatformSettingsPage from "./components/AdminPlatformSettingsPage";
 import AdminNotificationsPage from "./components/AdminNotificationsPage";
 import AdminReportsPage from "./components/AdminReportsPage";
+import AdminArchivePage from "./components/AdminArchivePage";
 import { ToastProvider } from "./components/Toast";
 import "./App.css";
 
@@ -79,6 +80,10 @@ function App() {
                             <Route
                                 path='admin/reports'
                                 element={<AdminReportsPage />}
+                            />
+                            <Route
+                                path='admin/archive'
+                                element={<AdminArchivePage />}
                             />
                         </Route>
                     </Routes>
