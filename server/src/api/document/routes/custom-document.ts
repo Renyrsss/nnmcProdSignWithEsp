@@ -31,6 +31,18 @@ export default {
             config: { policies: [], middlewares: [] },
         },
         {
+            method: "GET",
+            path: "/admin/platform-settings",
+            handler: "api::document.document.getAdminPlatformSettings",
+            config: { policies: [], middlewares: [] },
+        },
+        {
+            method: "PUT",
+            path: "/admin/platform-settings",
+            handler: "api::document.document.updateAdminPlatformSettings",
+            config: { policies: [], middlewares: [] },
+        },
+        {
             method: "POST",
             path: "/admin/documents/:id/recheck-signatures",
             handler: "api::document.document.recheckAdminDocumentSignatures",

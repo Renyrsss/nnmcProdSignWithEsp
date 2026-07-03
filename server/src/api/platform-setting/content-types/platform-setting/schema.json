@@ -1,0 +1,73 @@
+{
+  "kind": "collectionType",
+  "collectionName": "platform_settings",
+  "info": {
+    "singularName": "platform-setting",
+    "pluralName": "platform-settings",
+    "displayName": "Platform Setting",
+    "description": "Настройки платформы документооборота"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "baseUrl": {
+      "type": "string"
+    },
+    "qrTemplate": {
+      "type": "text"
+    },
+    "stampTemplate": {
+      "type": "text"
+    },
+    "maxFileSizeMb": {
+      "type": "integer",
+      "default": 25
+    },
+    "allowedFileExtensions": {
+      "type": "json"
+    },
+    "documentRetentionDays": {
+      "type": "integer"
+    },
+    "archiveRetentionDays": {
+      "type": "integer"
+    },
+    "emailNotifications": {
+      "type": "boolean",
+      "default": false
+    },
+    "smsNotifications": {
+      "type": "boolean",
+      "default": false
+    },
+    "internalNotifications": {
+      "type": "boolean",
+      "default": true
+    },
+    "notifyAuthorOnComplete": {
+      "type": "boolean",
+      "default": true
+    },
+    "notifyAdminOnErrors": {
+      "type": "boolean",
+      "default": true
+    },
+    "unsignedReminderEnabled": {
+      "type": "boolean",
+      "default": false
+    },
+    "unsignedReminderHours": {
+      "type": "integer",
+      "default": 24
+    },
+    "signatureModes": {
+      "type": "json"
+    },
+    "retentionPolicyEnabled": {
+      "type": "boolean",
+      "default": false
+    }
+  }
+}

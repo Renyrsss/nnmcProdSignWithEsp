@@ -27,6 +27,7 @@
         "document_reminder_requested",
         "document_signature_error",
         "document_signature_rechecked",
+        "platform_settings_updated",
         "document_deleted"
       ],
       "required": true

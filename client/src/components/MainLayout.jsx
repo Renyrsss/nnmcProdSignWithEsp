@@ -17,6 +17,7 @@ import {
     FileCog,
     ClipboardList,
     ShieldCheck,
+    Settings,
 } from "lucide-react";
 
 export default function MainLayout() {
@@ -156,6 +157,15 @@ export default function MainLayout() {
             isActive: () =>
                 pathname === "/admin/signature-monitoring" ||
                 pathname.startsWith("/admin/signature-monitoring/"),
+        },
+        {
+            to: "/admin/platform-settings",
+            label: "Настройки",
+            shortLabel: "Настр.",
+            icon: Settings,
+            isActive: () =>
+                pathname === "/admin/platform-settings" ||
+                pathname.startsWith("/admin/platform-settings/"),
         },
     ];
 

@@ -28,6 +28,7 @@ const EVENT_LABELS = {
     document_reminder_requested: "Напоминание",
     document_signature_error: "Ошибка подписи",
     document_signature_rechecked: "Проверка CMS",
+    platform_settings_updated: "Настройки изменены",
     document_deleted: "Документ удален",
 };
 
@@ -44,6 +45,7 @@ const EVENT_STYLES = {
     document_reminder_requested: "bg-yellow-100 text-yellow-800",
     document_signature_error: "bg-rose-100 text-rose-800",
     document_signature_rechecked: "bg-cyan-100 text-cyan-800",
+    platform_settings_updated: "bg-violet-100 text-violet-800",
     document_deleted: "bg-red-100 text-red-800",
 };
 
@@ -73,6 +75,9 @@ const formatMetadata = (metadata) => {
     if (metadata.status) visible.push(`Проверка: ${metadata.status}`);
     if (metadata.cmsFiles !== undefined) {
         visible.push(`CMS: ${metadata.cmsFiles}/${metadata.signedEntries || 0}`);
+    }
+    if (Array.isArray(metadata.changedFields)) {
+        visible.push(`Поля: ${metadata.changedFields.join(", ")}`);
     }
 
     if (visible.length > 0) return visible.join("; ");

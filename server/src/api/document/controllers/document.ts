@@ -756,6 +756,227 @@ const appendSignatureMonitoringError = (
     };
 };
 
+const DEFAULT_PLATFORM_SETTINGS = {
+    baseUrl: "",
+    qrTemplate:
+        "Документ: {{title}}; ID: {{uid}}; Подписант: {{signerName}}; Дата: {{signedAt}}",
+    stampTemplate: "{{signerName}}\n{{signedAt}}\nИИН: {{iin}}",
+    maxFileSizeMb: 25,
+    allowedFileExtensions: [".pdf"],
+    documentRetentionDays: null,
+    archiveRetentionDays: null,
+    emailNotifications: false,
+    smsNotifications: false,
+    internalNotifications: true,
+    notifyAuthorOnComplete: true,
+    notifyAdminOnErrors: true,
+    unsignedReminderEnabled: false,
+    unsignedReminderHours: 24,
+    signatureModes: {
+        eds: true,
+        simple: true,
+        combined: false,
+    },
+    retentionPolicyEnabled: false,
+};
+
+const toBoolean = (value: any, fallback: boolean) => {
+    if (value === undefined || value === null) return fallback;
+    return Boolean(value);
+};
+
+const normalizeIntegerSetting = (
+    value: any,
+    fallback: number | null,
+    min: number,
+    max: number,
+    allowNull = true
+) => {
+    if (value === undefined) return fallback;
+    if ((value === null || value === "") && allowNull) return null;
+
+    const parsed = Number.parseInt(String(value), 10);
+    if (!Number.isFinite(parsed) || parsed < min || parsed > max) return undefined;
+    return parsed;
+};
+
+const normalizeFileExtensions = (value: any) => {
+    const rawItems = Array.isArray(value)
+        ? value
+        : String(value || "")
+              .split(",")
+              .map((item) => item.trim());
+
+    const extensions = Array.from(
+        new Set(
+            rawItems
+                .map((item) => cleanString(item).toLowerCase())
+                .filter(Boolean)
+                .map((item) => (item.startsWith(".") ? item : `.${item}`))
+                .filter((item) => /^\.[a-z0-9]{2,10}$/.test(item))
+        )
+    );
+
+    return extensions.length > 0 ? extensions : undefined;
+};
+
+const normalizeSignatureModes = (value: any) => {
+    const source = value && typeof value === "object" ? value : {};
+    const signatureModes = {
+        eds: toBoolean(source.eds, true),
+        simple: toBoolean(source.simple, true),
+        combined: toBoolean(source.combined, false),
+    };
+
+    if (!signatureModes.eds && !signatureModes.simple && !signatureModes.combined) {
+        return undefined;
+    }
+
+    return signatureModes;
+};
+
+const toSafePlatformSettings = (settings: any = {}) => ({
+    id: settings.id || null,
+    baseUrl: settings.baseUrl || DEFAULT_PLATFORM_SETTINGS.baseUrl,
+    qrTemplate: settings.qrTemplate || DEFAULT_PLATFORM_SETTINGS.qrTemplate,
+    stampTemplate:
+        settings.stampTemplate || DEFAULT_PLATFORM_SETTINGS.stampTemplate,
+    maxFileSizeMb:
+        settings.maxFileSizeMb || DEFAULT_PLATFORM_SETTINGS.maxFileSizeMb,
+    allowedFileExtensions: Array.isArray(settings.allowedFileExtensions)
+        ? settings.allowedFileExtensions
+        : DEFAULT_PLATFORM_SETTINGS.allowedFileExtensions,
+    documentRetentionDays:
+        settings.documentRetentionDays === undefined
+            ? DEFAULT_PLATFORM_SETTINGS.documentRetentionDays
+            : settings.documentRetentionDays,
+    archiveRetentionDays:
+        settings.archiveRetentionDays === undefined
+            ? DEFAULT_PLATFORM_SETTINGS.archiveRetentionDays
+            : settings.archiveRetentionDays,
+    emailNotifications: toBoolean(
+        settings.emailNotifications,
+        DEFAULT_PLATFORM_SETTINGS.emailNotifications
+    ),
+    smsNotifications: toBoolean(
+        settings.smsNotifications,
+        DEFAULT_PLATFORM_SETTINGS.smsNotifications
+    ),
+    internalNotifications: toBoolean(
+        settings.internalNotifications,
+        DEFAULT_PLATFORM_SETTINGS.internalNotifications
+    ),
+    notifyAuthorOnComplete: toBoolean(
+        settings.notifyAuthorOnComplete,
+        DEFAULT_PLATFORM_SETTINGS.notifyAuthorOnComplete
+    ),
+    notifyAdminOnErrors: toBoolean(
+        settings.notifyAdminOnErrors,
+        DEFAULT_PLATFORM_SETTINGS.notifyAdminOnErrors
+    ),
+    unsignedReminderEnabled: toBoolean(
+        settings.unsignedReminderEnabled,
+        DEFAULT_PLATFORM_SETTINGS.unsignedReminderEnabled
+    ),
+    unsignedReminderHours:
+        settings.unsignedReminderHours ||
+        DEFAULT_PLATFORM_SETTINGS.unsignedReminderHours,
+    signatureModes:
+        settings.signatureModes || DEFAULT_PLATFORM_SETTINGS.signatureModes,
+    retentionPolicyEnabled: toBoolean(
+        settings.retentionPolicyEnabled,
+        DEFAULT_PLATFORM_SETTINGS.retentionPolicyEnabled
+    ),
+    updatedAt: settings.updatedAt || null,
+});
+
+const getOrCreatePlatformSettings = async (strapi: any) => {
+    const existing = await strapi.db
+        .query("api::platform-setting.platform-setting")
+        .findOne({ orderBy: { createdAt: "asc" } });
+
+    if (existing) return existing;
+
+    return strapi.db.query("api::platform-setting.platform-setting").create({
+        data: DEFAULT_PLATFORM_SETTINGS,
+    });
+};
+
+const normalizePlatformSettingsPayload = (body: any) => {
+    const maxFileSizeMb = normalizeIntegerSetting(
+        body.maxFileSizeMb,
+        DEFAULT_PLATFORM_SETTINGS.maxFileSizeMb,
+        1,
+        500,
+        false
+    );
+    const documentRetentionDays = normalizeIntegerSetting(
+        body.documentRetentionDays,
+        null,
+        1,
+        36500
+    );
+    const archiveRetentionDays = normalizeIntegerSetting(
+        body.archiveRetentionDays,
+        null,
+        1,
+        36500
+    );
+    const unsignedReminderHours = normalizeIntegerSetting(
+        body.unsignedReminderHours,
+        DEFAULT_PLATFORM_SETTINGS.unsignedReminderHours,
+        1,
+        8760,
+        false
+    );
+    const allowedFileExtensions = normalizeFileExtensions(
+        body.allowedFileExtensions
+    );
+    const signatureModes = normalizeSignatureModes(body.signatureModes);
+
+    if (maxFileSizeMb === undefined) return { error: "Некорректный лимит файла" };
+    if (documentRetentionDays === undefined) {
+        return { error: "Некорректный срок хранения документов" };
+    }
+    if (archiveRetentionDays === undefined) {
+        return { error: "Некорректный срок хранения архива" };
+    }
+    if (unsignedReminderHours === undefined) {
+        return { error: "Некорректный период напоминаний" };
+    }
+    if (!allowedFileExtensions) {
+        return { error: "Укажите хотя бы один корректный формат файла" };
+    }
+    if (!signatureModes) {
+        return { error: "Должен быть включен хотя бы один режим подписи" };
+    }
+
+    return {
+        data: {
+            baseUrl: cleanString(body.baseUrl),
+            qrTemplate:
+                cleanString(body.qrTemplate) ||
+                DEFAULT_PLATFORM_SETTINGS.qrTemplate,
+            stampTemplate:
+                cleanString(body.stampTemplate) ||
+                DEFAULT_PLATFORM_SETTINGS.stampTemplate,
+            maxFileSizeMb,
+            allowedFileExtensions,
+            documentRetentionDays,
+            archiveRetentionDays,
+            emailNotifications: Boolean(body.emailNotifications),
+            smsNotifications: Boolean(body.smsNotifications),
+            internalNotifications: Boolean(body.internalNotifications),
+            notifyAuthorOnComplete: Boolean(body.notifyAuthorOnComplete),
+            notifyAdminOnErrors: Boolean(body.notifyAdminOnErrors),
+            unsignedReminderEnabled: Boolean(body.unsignedReminderEnabled),
+            unsignedReminderHours,
+            signatureModes,
+            retentionPolicyEnabled: Boolean(body.retentionPolicyEnabled),
+        },
+    };
+};
+
 const findDocumentForAccess = async (strapi: any, id: string | number) => {
     try {
         const document = await strapi
@@ -1620,6 +1841,51 @@ export default factories.createCoreController(
             });
 
             return ctx.send({ data: buildSignatureMonitoringRecord(updated) });
+        },
+
+        /**
+         * GET /api/admin/platform-settings
+         */
+        async getAdminPlatformSettings(ctx) {
+            const admin = await requireAppAdmin(ctx, strapi);
+            if (!admin) return;
+
+            const settings = await getOrCreatePlatformSettings(strapi);
+            return ctx.send({ data: toSafePlatformSettings(settings) });
+        },
+
+        /**
+         * PUT /api/admin/platform-settings
+         */
+        async updateAdminPlatformSettings(ctx) {
+            const admin = await requireAppAdmin(ctx, strapi);
+            if (!admin) return;
+
+            const normalized = normalizePlatformSettingsPayload(
+                ctx.request.body || {}
+            );
+            if (normalized.error) return ctx.badRequest(normalized.error);
+
+            const settings = await getOrCreatePlatformSettings(strapi);
+            const updated = await strapi.db
+                .query("api::platform-setting.platform-setting")
+                .update({
+                    where: { id: settings.id },
+                    data: normalized.data,
+                });
+
+            await createAuditLog(strapi, ctx, "platform_settings_updated", {
+                actor: admin,
+                metadata: {
+                    changedFields: Object.keys(normalized.data || {}),
+                },
+            });
+
+            strapi.log.info(
+                `[app-admin] user=${admin.id} updated platform settings`
+            );
+
+            return ctx.send({ data: toSafePlatformSettings(updated) });
         },
 
         /**

@@ -96,6 +96,20 @@ export const recheckAdminDocumentSignatures = async (documentId) => {
     return response.data.data;
 };
 
+export const getAdminPlatformSettings = async () => {
+    const response = await axios.get(`${API_URL}/admin/platform-settings`, {
+        headers: authHeaders(),
+    });
+    return response.data.data;
+};
+
+export const updateAdminPlatformSettings = async (payload) => {
+    const response = await axios.put(`${API_URL}/admin/platform-settings`, payload, {
+        headers: authHeaders(),
+    });
+    return response.data.data;
+};
+
 export const getAdminUsers = async () => {
     const response = await axios.get(`${API_URL}/admin/users`, {
         headers: authHeaders(),

@@ -468,6 +468,7 @@ export interface ApiAuditLogAuditLog extends Struct.CollectionTypeSchema {
         'document_reminder_requested',
         'document_signature_error',
         'document_signature_rechecked',
+        'platform_settings_updated',
         'document_deleted',
       ]
     > &
@@ -636,6 +637,59 @@ export interface ApiDocumentDocument extends Struct.CollectionTypeSchema {
     >;
     title: Schema.Attribute.String & Schema.Attribute.Required;
     uid: Schema.Attribute.String & Schema.Attribute.Unique;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+  };
+}
+
+export interface ApiPlatformSettingPlatformSetting
+  extends Struct.CollectionTypeSchema {
+  collectionName: 'platform_settings';
+  info: {
+    description: '\u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 \u043F\u043B\u0430\u0442\u0444\u043E\u0440\u043C\u044B \u0434\u043E\u043A\u0443\u043C\u0435\u043D\u0442\u043E\u043E\u0431\u043E\u0440\u043E\u0442\u0430';
+    displayName: 'Platform Setting';
+    pluralName: 'platform-settings';
+    singularName: 'platform-setting';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  attributes: {
+    allowedFileExtensions: Schema.Attribute.JSON;
+    archiveRetentionDays: Schema.Attribute.Integer;
+    baseUrl: Schema.Attribute.String;
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+    documentRetentionDays: Schema.Attribute.Integer;
+    emailNotifications: Schema.Attribute.Boolean &
+      Schema.Attribute.DefaultTo<false>;
+    internalNotifications: Schema.Attribute.Boolean &
+      Schema.Attribute.DefaultTo<true>;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<
+      'oneToMany',
+      'api::platform-setting.platform-setting'
+    > &
+      Schema.Attribute.Private;
+    maxFileSizeMb: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<25>;
+    notifyAdminOnErrors: Schema.Attribute.Boolean &
+      Schema.Attribute.DefaultTo<true>;
+    notifyAuthorOnComplete: Schema.Attribute.Boolean &
+      Schema.Attribute.DefaultTo<true>;
+    publishedAt: Schema.Attribute.DateTime;
+    qrTemplate: Schema.Attribute.Text;
+    retentionPolicyEnabled: Schema.Attribute.Boolean &
+      Schema.Attribute.DefaultTo<false>;
+    signatureModes: Schema.Attribute.JSON;
+    smsNotifications: Schema.Attribute.Boolean &
+      Schema.Attribute.DefaultTo<false>;
+    stampTemplate: Schema.Attribute.Text;
+    unsignedReminderEnabled: Schema.Attribute.Boolean &
+      Schema.Attribute.DefaultTo<false>;
+    unsignedReminderHours: Schema.Attribute.Integer &
+      Schema.Attribute.DefaultTo<24>;
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
       Schema.Attribute.Private;
@@ -1193,6 +1247,7 @@ declare module '@strapi/strapi' {
       'api::department.department': ApiDepartmentDepartment;
       'api::document-type.document-type': ApiDocumentTypeDocumentType;
       'api::document.document': ApiDocumentDocument;
+      'api::platform-setting.platform-setting': ApiPlatformSettingPlatformSetting;
       'api::subdivision.subdivision': ApiSubdivisionSubdivision;
       'plugin::content-releases.release': PluginContentReleasesRelease;
       'plugin::content-releases.release-action': PluginContentReleasesReleaseAction;

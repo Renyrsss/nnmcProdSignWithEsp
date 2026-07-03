@@ -63,6 +63,8 @@ const ADMIN_APP_ACTIONS = [
     "api::document.document.findAdminDocument",
     "api::document.document.findAdminAuditLogs",
     "api::document.document.findAdminSignatureMonitoring",
+    "api::document.document.getAdminPlatformSettings",
+    "api::document.document.updateAdminPlatformSettings",
     "api::document.document.recheckAdminDocumentSignatures",
     "api::document.document.cancelAdminDocument",
     "api::document.document.reassignAdminDocumentSigner",
