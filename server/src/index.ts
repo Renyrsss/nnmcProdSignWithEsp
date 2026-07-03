@@ -56,6 +56,18 @@ const AUTHENTICATED_APP_ACTIONS = [
     "api::document.document.presignUrl",
     "api::document.document.reportSignatureError",
     "api::document.document.recordSecurityHeartbeat",
+    "api::document.document.cancelAdminDocument",
+    "api::document.document.findAdminArchive",
+    "api::document.document.archiveAdminDocument",
+    "api::document.document.restoreAdminDocument",
+    "api::document.document.exportAdminDocumentArchive",
+    "api::document.document.createAdminDepartment",
+    "api::document.document.updateAdminDepartment",
+    "api::document.document.deleteAdminDepartment",
+    "api::document.document.findAdminDocumentTypes",
+    "api::document.document.createAdminDocumentType",
+    "api::document.document.updateAdminDocumentType",
+    "api::document.document.deleteAdminDocumentType",
     "api::document.document.getAppMe",
 ];
 

@@ -480,6 +480,16 @@ export interface ApiAuditLogAuditLog extends Struct.CollectionTypeSchema {
         'user_forced_logout',
         'security_suspicious_action',
         'role_permissions_updated',
+        'user_created',
+        'user_updated',
+        'user_password_changed',
+        'user_status_updated',
+        'department_created',
+        'department_updated',
+        'department_deleted',
+        'document_type_created',
+        'document_type_updated',
+        'document_type_deleted',
         'document_deleted',
       ]
     > &

@@ -3,8 +3,20 @@ import { getToken } from "./auth";
 
 const API_URL = `${import.meta.env.VITE_API_BASE}/api`;
 
+const getStoredSessionVersion = () => {
+    try {
+        const user = JSON.parse(localStorage.getItem("user") || "null");
+        return user?.sessionVersion || null;
+    } catch {
+        return null;
+    }
+};
+
 const authHeaders = () => ({
     Authorization: `Bearer ${getToken()}`,
+    ...(getStoredSessionVersion()
+        ? { "X-Session-Version": String(getStoredSessionVersion()) }
+        : {}),
 });
 
 const buildQuery = (params = {}) => {

@@ -38,6 +38,33 @@ const isEmptyRelationId = (value: any) =>
 
 const isEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 
+const getBearerToken = (ctx: any) => {
+    const header = String(ctx.request.headers.authorization || "");
+    const match = header.match(/^Bearer\s+(.+)$/i);
+    return match?.[1] || "";
+};
+
+const decodeJwtPayload = (token: string) => {
+    try {
+        const payload = token.split(".")[1];
+        if (!payload) return null;
+        const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+        const padded = normalized.padEnd(
+            normalized.length + ((4 - (normalized.length % 4)) % 4),
+            "="
+        );
+        return JSON.parse(Buffer.from(padded, "base64").toString("utf8"));
+    } catch {
+        return null;
+    }
+};
+
+const getJwtIssuedAtMs = (ctx: any) => {
+    const payload = decodeJwtPayload(getBearerToken(ctx));
+    const iat = Number(payload?.iat);
+    return Number.isFinite(iat) ? iat * 1000 : null;
+};
+
 const toSafeRole = (role: any) =>
     role
         ? {
@@ -261,6 +288,11 @@ const requireAppAdmin = async (ctx: any, strapi: any) => {
     }
 
     const fullUser = await getAuthenticatedUser(strapi, user.id);
+    if (!isActiveUserSession(ctx, fullUser)) {
+        ctx.unauthorized("Сессия завершена администратором");
+        return null;
+    }
+
     if (!isAppAdminRole(fullUser?.role)) {
         ctx.forbidden("Требуется роль администратора");
         return null;
@@ -1239,6 +1271,18 @@ const isClientSessionCurrent = (ctx: any, user: any) => {
     return !clientVersion || clientVersion >= serverVersion;
 };
 
+function isActiveUserSession(ctx: any, user: any) {
+    if (!user || user.blocked) return false;
+
+    const forcedLogoutMs = getDateTime(user.forcedLogoutAt);
+    const tokenIssuedAtMs = getJwtIssuedAtMs(ctx);
+    if (forcedLogoutMs && (!tokenIssuedAtMs || tokenIssuedAtMs < forcedLogoutMs)) {
+        return false;
+    }
+
+    return isClientSessionCurrent(ctx, user);
+}
+
 const toSafeSecuritySession = (user: any, settings: any) => {
     const lastSeenMs = getDateTime(user.lastSeenAt);
     const idleMinutes = settings.sessionIdleMinutes || 30;
@@ -1389,6 +1433,31 @@ const hasUserRolePermission = async (strapi: any, user: any, permission: string)
     return Boolean(permissions?.[permission]);
 };
 
+const requireAppAdminOrRolePermission = async (
+    ctx: any,
+    strapi: any,
+    permission: string
+) => {
+    const user = ctx.state.user;
+    if (!user) {
+        ctx.unauthorized("Необходима авторизация");
+        return null;
+    }
+
+    const fullUser = await getAuthenticatedUser(strapi, user.id);
+    if (!isActiveUserSession(ctx, fullUser)) {
+        ctx.unauthorized("Сессия завершена администратором");
+        return null;
+    }
+
+    if (!(await hasUserRolePermission(strapi, fullUser, permission))) {
+        ctx.forbidden("Недостаточно прав для этого действия");
+        return null;
+    }
+
+    return fullUser;
+};
+
 const isDocumentInUserDepartment = (document: any, user: any) => {
     const userDepartmentId = Number(user?.department?.id);
     const creatorDepartmentId = Number(document?.creator?.department?.id);
@@ -1442,6 +1511,77 @@ const isSigningUpdate = (updateData: any) =>
             updateData?.currentFile ||
             updateData?.status === "completed"
     );
+
+const getDocumentTypeForCreate = async (strapi: any, documentTypeId: any) => {
+    const normalizedId = normalizeOptionalId(documentTypeId);
+    if (!normalizedId) return null;
+
+    return strapi.db.query("api::document-type.document-type").findOne({
+        where: { id: normalizedId },
+        populate: ["allowedDepartments"],
+    });
+};
+
+const normalizeCreateDocumentByTypeRules = async (
+    strapi: any,
+    data: any,
+    creator: any
+) => {
+    const documentType = await getDocumentTypeForCreate(strapi, data.documentType);
+    if (!documentType) return { data };
+
+    const signers = Array.isArray(data.signers) ? data.signers : [];
+    const signerIds = new Set(
+        signers
+            .map((signer: any) => Number(signer?.userId))
+            .filter((userId: number) => Number.isFinite(userId))
+    );
+    const mandatorySigners = Array.isArray(documentType.mandatorySigners)
+        ? documentType.mandatorySigners
+        : [];
+    const missingMandatorySigner = mandatorySigners.find(
+        (signer: any) => !signerIds.has(Number(signer?.userId))
+    );
+    if (missingMandatorySigner) {
+        return {
+            error: `Добавьте обязательного подписанта: ${
+                missingMandatorySigner.userName || `ID ${missingMandatorySigner.userId}`
+            }`,
+        };
+    }
+
+    if (documentType.requiresEds && data.signatureType !== "eds") {
+        return { error: "Для выбранного типа документа требуется ЭЦП" };
+    }
+
+    const allowedDepartments = Array.isArray(documentType.allowedDepartments)
+        ? documentType.allowedDepartments
+        : [];
+    if (allowedDepartments.length > 0) {
+        const creatorDepartmentId = Number(creator?.department?.id);
+        const allowed = allowedDepartments.some(
+            (department: any) => Number(department.id) === creatorDepartmentId
+        );
+        if (!allowed) {
+            return {
+                error: "Выбранный тип документа недоступен для отдела автора",
+            };
+        }
+    }
+
+    const nextData = { ...data };
+    if (documentType.defaultSignatureSequential) {
+        nextData.signatureSequential = true;
+    }
+    if (documentType.signingDeadlineDays && !nextData.signingDeadlineAt) {
+        nextData.signingDeadlineAt = addDaysIso(
+            new Date(),
+            Number(documentType.signingDeadlineDays)
+        );
+    }
+
+    return { data: nextData };
+};
 
 const NOTIFICATION_EVENTS = [
     "document_created",
@@ -2078,6 +2218,9 @@ export default factories.createCoreController(
 
             const fullUser = await getAuthenticatedUser(strapi, user.id);
             const isAdmin = isAppAdminRole(fullUser?.role);
+            if (!isActiveUserSession(ctx, fullUser)) {
+                return ctx.unauthorized("Сессия завершена администратором");
+            }
             if (
                 !isAdmin &&
                 !(await canReadDocumentWithPermissions(strapi, document, fullUser))
@@ -2105,14 +2248,23 @@ export default factories.createCoreController(
             const user = ctx.state.user;
             if (!user) return ctx.unauthorized("Необходима авторизация");
             const fullUser = await getAuthenticatedUser(strapi, user.id);
+            if (!isActiveUserSession(ctx, fullUser)) {
+                return ctx.unauthorized("Сессия завершена администратором");
+            }
             if (!(await hasUserRolePermission(strapi, fullUser, "createDocuments"))) {
                 return ctx.forbidden("Ваша роль не может создавать документы");
             }
+            const normalizedByType = await normalizeCreateDocumentByTypeRules(
+                strapi,
+                ctx.request.body?.data || {},
+                fullUser
+            );
+            if (normalizedByType.error) return ctx.badRequest(normalizedByType.error);
 
             ctx.request.body = {
                 ...ctx.request.body,
                 data: {
-                    ...(ctx.request.body?.data || {}),
+                    ...normalizedByType.data,
                     creator: user.id,
                 },
             };
@@ -2154,6 +2306,9 @@ export default factories.createCoreController(
 
             const fullUser = await getAuthenticatedUser(strapi, user.id);
             const isAdmin = isAppAdminRole(fullUser?.role);
+            if (!isActiveUserSession(ctx, fullUser)) {
+                return ctx.unauthorized("Сессия завершена администратором");
+            }
             if (
                 !isAdmin &&
                 !(await canReadDocumentWithPermissions(strapi, document, fullUser))
@@ -2214,6 +2369,9 @@ export default factories.createCoreController(
 
             const fullUser = await getAuthenticatedUser(strapi, user.id);
             const isAdmin = isAppAdminRole(fullUser?.role);
+            if (!isActiveUserSession(ctx, fullUser)) {
+                return ctx.unauthorized("Сессия завершена администратором");
+            }
             const isCreator = Number(document.creator?.id) === Number(user.id);
             if (
                 !isAdmin &&
@@ -2248,7 +2406,7 @@ export default factories.createCoreController(
 
             const fullUser = await getAuthenticatedUser(strapi, user.id);
             if (!fullUser) return ctx.notFound("Пользователь не найден");
-            if (!isClientSessionCurrent(ctx, fullUser)) {
+            if (!isActiveUserSession(ctx, fullUser)) {
                 return ctx.unauthorized("Сессия завершена администратором");
             }
 
@@ -2290,7 +2448,7 @@ export default factories.createCoreController(
 
             const fullUser = await getAuthenticatedUser(strapi, user.id);
             if (!fullUser) return ctx.notFound("Пользователь не найден");
-            if (!isClientSessionCurrent(ctx, fullUser)) {
+            if (!isActiveUserSession(ctx, fullUser)) {
                 return ctx.unauthorized("Сессия завершена администратором");
             }
 
@@ -2333,6 +2491,9 @@ export default factories.createCoreController(
             const user = ctx.state.user;
             if (!user) return ctx.unauthorized("Необходима авторизация");
             const fullUser = await getAuthenticatedUser(strapi, user.id);
+            if (!isActiveUserSession(ctx, fullUser)) {
+                return ctx.unauthorized("Сессия завершена администратором");
+            }
             const permissionFilters = await getDocumentPermissionFilters(
                 strapi,
                 fullUser
@@ -2503,7 +2664,11 @@ export default factories.createCoreController(
          * GET /api/admin/archive
          */
         async findAdminArchive(ctx) {
-            const admin = await requireAppAdmin(ctx, strapi);
+            const admin = await requireAppAdminOrRolePermission(
+                ctx,
+                strapi,
+                "archiveDocuments"
+            );
             if (!admin) return;
 
             const page = toPositiveInt(ctx.query.page, 1, 100000);
@@ -2540,7 +2705,11 @@ export default factories.createCoreController(
          * POST /api/admin/documents/:id/archive
          */
         async archiveAdminDocument(ctx) {
-            const admin = await requireAppAdmin(ctx, strapi);
+            const admin = await requireAppAdminOrRolePermission(
+                ctx,
+                strapi,
+                "archiveDocuments"
+            );
             if (!admin) return;
 
             const { id } = ctx.params;
@@ -2613,7 +2782,11 @@ export default factories.createCoreController(
          * POST /api/admin/documents/:id/restore
          */
         async restoreAdminDocument(ctx) {
-            const admin = await requireAppAdmin(ctx, strapi);
+            const admin = await requireAppAdminOrRolePermission(
+                ctx,
+                strapi,
+                "archiveDocuments"
+            );
             if (!admin) return;
 
             const { id } = ctx.params;
@@ -2672,7 +2845,11 @@ export default factories.createCoreController(
          * GET /api/admin/documents/:id/archive-export
          */
         async exportAdminDocumentArchive(ctx) {
-            const admin = await requireAppAdmin(ctx, strapi);
+            const admin = await requireAppAdminOrRolePermission(
+                ctx,
+                strapi,
+                "archiveDocuments"
+            );
             if (!admin) return;
 
             const { id } = ctx.params;
@@ -2973,7 +3150,11 @@ export default factories.createCoreController(
          * POST /api/admin/documents/:id/cancel
          */
         async cancelAdminDocument(ctx) {
-            const admin = await requireAppAdmin(ctx, strapi);
+            const admin = await requireAppAdminOrRolePermission(
+                ctx,
+                strapi,
+                "cancelDocuments"
+            );
             if (!admin) return;
 
             const { id } = ctx.params;
@@ -3804,6 +3985,15 @@ export default factories.createCoreController(
             strapi.log.info(
                 `[app-admin] user=${admin.id} created user=${created.id}`
             );
+            await createAuditLog(strapi, ctx, "user_created", {
+                actor: admin,
+                targetUser: user,
+                metadata: {
+                    role: user.role?.type || user.role?.name || null,
+                    departmentId: user.department?.id || null,
+                    blocked: user.blocked,
+                },
+            });
 
             return ctx.created({ data: toSafeUser(user) });
         },
@@ -3882,6 +4072,14 @@ export default factories.createCoreController(
             strapi.log.info(
                 `[app-admin] user=${admin.id} updated user=${targetUser.id}`
             );
+            await createAuditLog(strapi, ctx, "user_updated", {
+                actor: admin,
+                targetUser: updated,
+                metadata: {
+                    role: updated.role?.type || updated.role?.name || null,
+                    departmentId: updated.department?.id || null,
+                },
+            });
 
             return ctx.send({ data: toSafeUser(updated) });
         },
@@ -3921,6 +4119,13 @@ export default factories.createCoreController(
             strapi.log.info(
                 `[app-admin] user=${admin.id} changed password for user=${targetUser.id}`
             );
+            await createAuditLog(strapi, ctx, "user_password_changed", {
+                actor: admin,
+                targetUser,
+                metadata: {
+                    sessionVersion: Number(targetUser.sessionVersion || 1) + 1,
+                },
+            });
 
             return ctx.send({ data: { id: targetUser.id } });
         },
@@ -3958,6 +4163,13 @@ export default factories.createCoreController(
             strapi.log.info(
                 `[app-admin] user=${admin.id} set blocked=${blocked} for user=${targetUser.id}`
             );
+            await createAuditLog(strapi, ctx, "user_status_updated", {
+                actor: admin,
+                targetUser: updated,
+                metadata: {
+                    blocked: updated.blocked,
+                },
+            });
 
             return ctx.send({
                 data: {
@@ -3971,7 +4183,11 @@ export default factories.createCoreController(
          * POST /api/admin/departments
          */
         async createAdminDepartment(ctx) {
-            const admin = await requireAppAdmin(ctx, strapi);
+            const admin = await requireAppAdminOrRolePermission(
+                ctx,
+                strapi,
+                "manageDictionaries"
+            );
             if (!admin) return;
 
             const name = cleanString(ctx.request.body?.name);
@@ -4012,6 +4228,14 @@ export default factories.createCoreController(
             strapi.log.info(
                 `[app-admin] user=${admin.id} created department=${created.id}`
             );
+            await createAuditLog(strapi, ctx, "department_created", {
+                actor: admin,
+                metadata: {
+                    departmentId: department.id,
+                    name: department.name,
+                    managerId: department.manager?.id || null,
+                },
+            });
 
             return ctx.created({ data: toSafeDepartmentSummary(department) });
         },
@@ -4020,7 +4244,11 @@ export default factories.createCoreController(
          * PUT /api/admin/departments/:id
          */
         async updateAdminDepartment(ctx) {
-            const admin = await requireAppAdmin(ctx, strapi);
+            const admin = await requireAppAdminOrRolePermission(
+                ctx,
+                strapi,
+                "manageDictionaries"
+            );
             if (!admin) return;
 
             const { id } = ctx.params;
@@ -4069,6 +4297,15 @@ export default factories.createCoreController(
             strapi.log.info(
                 `[app-admin] user=${admin.id} updated department=${targetDepartment.id}`
             );
+            await createAuditLog(strapi, ctx, "department_updated", {
+                actor: admin,
+                metadata: {
+                    departmentId: updated.id,
+                    previousName: targetDepartment.name,
+                    name: updated.name,
+                    managerId: updated.manager?.id || null,
+                },
+            });
 
             return ctx.send({ data: toSafeDepartmentSummary(updated) });
         },
@@ -4077,7 +4314,11 @@ export default factories.createCoreController(
          * DELETE /api/admin/departments/:id
          */
         async deleteAdminDepartment(ctx) {
-            const admin = await requireAppAdmin(ctx, strapi);
+            const admin = await requireAppAdminOrRolePermission(
+                ctx,
+                strapi,
+                "manageDictionaries"
+            );
             if (!admin) return;
 
             const { id } = ctx.params;
@@ -4110,6 +4351,13 @@ export default factories.createCoreController(
             strapi.log.info(
                 `[app-admin] user=${admin.id} deleted department=${department.id}`
             );
+            await createAuditLog(strapi, ctx, "department_deleted", {
+                actor: admin,
+                metadata: {
+                    departmentId: department.id,
+                    name: department.name,
+                },
+            });
 
             return ctx.send({ data: { id: department.id } });
         },
@@ -4118,7 +4366,11 @@ export default factories.createCoreController(
          * GET /api/admin/document-types
          */
         async findAdminDocumentTypes(ctx) {
-            const admin = await requireAppAdmin(ctx, strapi);
+            const admin = await requireAppAdminOrRolePermission(
+                ctx,
+                strapi,
+                "manageDictionaries"
+            );
             if (!admin) return;
 
             const documentTypes = await strapi.db
@@ -4150,7 +4402,11 @@ export default factories.createCoreController(
          * POST /api/admin/document-types
          */
         async createAdminDocumentType(ctx) {
-            const admin = await requireAppAdmin(ctx, strapi);
+            const admin = await requireAppAdminOrRolePermission(
+                ctx,
+                strapi,
+                "manageDictionaries"
+            );
             if (!admin) return;
 
             const body = ctx.request.body || {};
@@ -4214,6 +4470,13 @@ export default factories.createCoreController(
             strapi.log.info(
                 `[app-admin] user=${admin.id} created documentType=${created.id}`
             );
+            await createAuditLog(strapi, ctx, "document_type_created", {
+                actor: admin,
+                metadata: {
+                    documentTypeId: documentType.id,
+                    name: documentType.name,
+                },
+            });
 
             return ctx.created({ data: toSafeDocumentType(documentType, 0) });
         },
@@ -4222,7 +4485,11 @@ export default factories.createCoreController(
          * PUT /api/admin/document-types/:id
          */
         async updateAdminDocumentType(ctx) {
-            const admin = await requireAppAdmin(ctx, strapi);
+            const admin = await requireAppAdminOrRolePermission(
+                ctx,
+                strapi,
+                "manageDictionaries"
+            );
             if (!admin) return;
 
             const { id } = ctx.params;
@@ -4295,6 +4562,14 @@ export default factories.createCoreController(
             strapi.log.info(
                 `[app-admin] user=${admin.id} updated documentType=${targetDocumentType.id}`
             );
+            await createAuditLog(strapi, ctx, "document_type_updated", {
+                actor: admin,
+                metadata: {
+                    documentTypeId: updated.id,
+                    previousName: targetDocumentType.name,
+                    name: updated.name,
+                },
+            });
 
             return ctx.send({
                 data: toSafeDocumentType(updated, documentsCount),
@@ -4305,7 +4580,11 @@ export default factories.createCoreController(
          * DELETE /api/admin/document-types/:id
          */
         async deleteAdminDocumentType(ctx) {
-            const admin = await requireAppAdmin(ctx, strapi);
+            const admin = await requireAppAdminOrRolePermission(
+                ctx,
+                strapi,
+                "manageDictionaries"
+            );
             if (!admin) return;
 
             const { id } = ctx.params;
@@ -4332,6 +4611,13 @@ export default factories.createCoreController(
             strapi.log.info(
                 `[app-admin] user=${admin.id} deleted documentType=${documentType.id}`
             );
+            await createAuditLog(strapi, ctx, "document_type_deleted", {
+                actor: admin,
+                metadata: {
+                    documentTypeId: documentType.id,
+                    name: documentType.name,
+                },
+            });
 
             return ctx.send({ data: { id: documentType.id } });
         },
@@ -4368,6 +4654,9 @@ export default factories.createCoreController(
             );
             const fullUser = await getAuthenticatedUser(strapi, user.id);
             const isAdmin = isAppAdminRole(fullUser?.role);
+            if (!isActiveUserSession(ctx, fullUser)) {
+                return ctx.unauthorized("Сессия завершена администратором");
+            }
             if (!isCreator && !isAssigned && !isAdmin)
                 return ctx.forbidden("Нет доступа к этому документу");
 
@@ -4427,6 +4716,9 @@ export default factories.createCoreController(
             );
             const fullUser = await getAuthenticatedUser(strapi, user.id);
             const isAdmin = isAppAdminRole(fullUser?.role);
+            if (!isActiveUserSession(ctx, fullUser)) {
+                return ctx.unauthorized("Сессия завершена администратором");
+            }
             if (!isCreator && !isAssigned && !isAdmin)
                 return ctx.forbidden("Нет доступа к этому документу");
 
@@ -4482,6 +4774,9 @@ export default factories.createCoreController(
             );
             const fullUser = await getAuthenticatedUser(strapi, user.id);
             const isAdmin = isAppAdminRole(fullUser?.role);
+            if (!isActiveUserSession(ctx, fullUser)) {
+                return ctx.unauthorized("Сессия завершена администратором");
+            }
             if (!isCreator && !isAssigned && !isAdmin) {
                 return ctx.forbidden("Нет доступа к этому документу");
             }
