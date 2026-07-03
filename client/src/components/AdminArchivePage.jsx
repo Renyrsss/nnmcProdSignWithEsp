@@ -19,6 +19,7 @@ import {
 import { useToast } from "./Toast";
 
 const PAGE_SIZE = 50;
+const CANDIDATE_PAGE_SIZE = 25;
 
 const STATUS_LABELS = {
     pending: "Ожидает",
@@ -56,10 +57,17 @@ export default function AdminArchivePage() {
     const [savingId, setSavingId] = useState(null);
     const [exportingId, setExportingId] = useState(null);
     const [page, setPage] = useState(1);
+    const [candidatePage, setCandidatePage] = useState(1);
     const [meta, setMeta] = useState({
         total: 0,
         page: 1,
         pageSize: PAGE_SIZE,
+        pageCount: 1,
+    });
+    const [candidateMeta, setCandidateMeta] = useState({
+        total: 0,
+        page: 1,
+        pageSize: CANDIDATE_PAGE_SIZE,
         pageCount: 1,
     });
     const [filters, setFilters] = useState({
@@ -118,17 +126,26 @@ export default function AdminArchivePage() {
             const response = await getAdminDocuments({
                 q: candidateFilters.q,
                 status: candidateFilters.status,
-                page: 1,
-                pageSize: 25,
+                archived: "not_archived",
+                page: candidatePage,
+                pageSize: CANDIDATE_PAGE_SIZE,
             });
-            setCandidates((response.data || []).filter((doc) => !doc.archivedAt));
+            setCandidates(response.data || []);
+            setCandidateMeta(
+                response.meta || {
+                    total: 0,
+                    page: candidatePage,
+                    pageSize: CANDIDATE_PAGE_SIZE,
+                    pageCount: 1,
+                }
+            );
         } catch (error) {
             console.error("Ошибка загрузки документов для архивации:", error);
             toast.error("Ошибка загрузки документов для архивации");
         } finally {
             setCandidateLoading(false);
         }
-    }, [candidateFilters, toast]);
+    }, [candidateFilters, candidatePage, toast]);
 
     useEffect(() => {
         loadDictionaries();
@@ -142,20 +159,15 @@ export default function AdminArchivePage() {
         loadCandidates();
     }, [loadCandidates]);
 
-    const stats = useMemo(
-        () =>
-            archiveItems.reduce(
-                (acc, doc) => {
-                    acc.total += 1;
-                    if (doc.status === "completed") acc.completed += 1;
-                    if (doc.status === "cancelled") acc.cancelled += 1;
-                    if (doc.retentionUntil) acc.withRetention += 1;
-                    return acc;
-                },
-                { total: 0, completed: 0, cancelled: 0, withRetention: 0 }
-            ),
-        [archiveItems]
-    );
+    const stats = useMemo(() => {
+        const statusCounts = meta.statusCounts || {};
+        return {
+            total: meta.total || 0,
+            completed: statusCounts.completed || 0,
+            cancelled: statusCounts.cancelled || 0,
+            withRetention: meta.retentionCount || 0,
+        };
+    }, [meta]);
 
     const updateFilter = (key, value) => {
         setPage(1);
@@ -163,6 +175,7 @@ export default function AdminArchivePage() {
     };
 
     const updateCandidateFilter = (key, value) => {
+        setCandidatePage(1);
         setCandidateFilters((prev) => ({ ...prev, [key]: value }));
     };
 
@@ -250,7 +263,7 @@ export default function AdminArchivePage() {
                 <div className='grid grid-cols-2 gap-4 md:grid-cols-4'>
                     <div className='rounded-lg bg-gray-50 p-4'>
                         <p className='text-xs font-medium uppercase text-gray-500'>
-                            На странице
+                            В архиве
                         </p>
                         <p className='mt-1 text-2xl font-bold text-gray-900'>
                             {stats.total}
@@ -284,11 +297,16 @@ export default function AdminArchivePage() {
             </div>
 
             <div className='mb-6 rounded-xl bg-white p-6 shadow-sm'>
-                <div className='mb-4 flex items-center gap-2'>
-                    <FileArchive className='h-5 w-5 text-indigo-600' />
-                    <h3 className='text-lg font-semibold text-gray-900'>
-                        Перенести документ в архив
-                    </h3>
+                <div className='mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between'>
+                    <div className='flex items-center gap-2'>
+                        <FileArchive className='h-5 w-5 text-indigo-600' />
+                        <h3 className='text-lg font-semibold text-gray-900'>
+                            Перенести документ в архив
+                        </h3>
+                    </div>
+                    <p className='text-sm text-gray-500'>
+                        Доступно: {candidateMeta.total}
+                    </p>
                 </div>
                 <div className='mb-4 grid grid-cols-1 gap-3 md:grid-cols-[1fr_220px]'>
                     <div className='relative'>
@@ -358,6 +376,43 @@ export default function AdminArchivePage() {
                                 </button>
                             </div>
                         ))}
+                        <div className='flex flex-col gap-3 pt-2 text-sm text-gray-600 sm:flex-row sm:items-center sm:justify-between'>
+                            <span>
+                                Страница {candidateMeta.page || candidatePage} из{" "}
+                                {Math.max(candidateMeta.pageCount || 1, 1)}
+                            </span>
+                            <div className='flex gap-2'>
+                                <button
+                                    type='button'
+                                    onClick={() =>
+                                        setCandidatePage((prev) =>
+                                            Math.max(prev - 1, 1)
+                                        )
+                                    }
+                                    disabled={candidatePage <= 1 || candidateLoading}
+                                    className='rounded-lg border border-gray-300 px-3 py-2 font-medium text-gray-700 disabled:opacity-50'>
+                                    Назад
+                                </button>
+                                <button
+                                    type='button'
+                                    onClick={() =>
+                                        setCandidatePage((prev) =>
+                                            Math.min(
+                                                prev + 1,
+                                                candidateMeta.pageCount || 1
+                                            )
+                                        )
+                                    }
+                                    disabled={
+                                        candidatePage >=
+                                            (candidateMeta.pageCount || 1) ||
+                                        candidateLoading
+                                    }
+                                    className='rounded-lg border border-gray-300 px-3 py-2 font-medium text-gray-700 disabled:opacity-50'>
+                                    Вперед
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 )}
             </div>

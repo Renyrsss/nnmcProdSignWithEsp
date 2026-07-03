@@ -419,6 +419,14 @@ const buildAdminDocumentFilters = (query: any, options: { includeStatus?: boolea
         andFilters.push({ documentType: { id: Number(documentTypeId) } });
     }
 
+    const archived = normalizeQueryValue(query.archived);
+    if (archived === "archived") {
+        andFilters.push({ archivedAt: { $notNull: true } });
+    }
+    if (archived === "not_archived") {
+        andFilters.push({ archivedAt: { $null: true } });
+    }
+
     const dateFrom = normalizeQueryValue(query.dateFrom);
     const dateTo = normalizeQueryValue(query.dateTo);
     if (dateFrom || dateTo) {
@@ -442,8 +450,11 @@ const buildAdminDocumentFilters = (query: any, options: { includeStatus?: boolea
     return andFilters.length > 0 ? { $and: andFilters } : undefined;
 };
 
-const buildAdminArchiveFilters = (query: any) => {
-    const baseFilters = buildAdminDocumentFilters(query);
+const buildAdminArchiveFilters = (
+    query: any,
+    options: { includeStatus?: boolean } = {}
+) => {
+    const baseFilters = buildAdminDocumentFilters(query, options);
     const archiveFilters: any[] = [{ archivedAt: { $notNull: true } }];
 
     const archivedFrom = normalizeQueryValue(query.archivedFrom);
@@ -478,6 +489,12 @@ const ADMIN_DOCUMENT_STATUS_KEYS = [
 const appendAdminDocumentStatusFilter = (baseFilters: any, status: string) => {
     const filters = baseFilters?.$and?.length ? [...baseFilters.$and] : [];
     filters.push({ status });
+    return { $and: filters };
+};
+
+const appendAdminDocumentRetentionFilter = (baseFilters: any) => {
+    const filters = baseFilters?.$and?.length ? [...baseFilters.$and] : [];
+    filters.push({ retentionUntil: { $notNull: true } });
     return { $and: filters };
 };
 
@@ -2706,8 +2723,11 @@ export default factories.createCoreController(
             const page = toPositiveInt(ctx.query.page, 1, 100000);
             const pageSize = toPositiveInt(ctx.query.pageSize, 50, 200);
             const filters = buildAdminArchiveFilters(ctx.query);
+            const archiveCountFilters = buildAdminArchiveFilters(ctx.query, {
+                includeStatus: false,
+            });
 
-            const [documents, total] = await Promise.all([
+            const [documents, total, statusCounts, retentionCount] = await Promise.all([
                 strapi.documents("api::document.document").findMany({
                     filters,
                     populate: getDocumentPopulate(),
@@ -2717,6 +2737,10 @@ export default factories.createCoreController(
                 } as any),
                 strapi.documents("api::document.document").count({
                     filters,
+                } as any),
+                countAdminDocumentsByStatus(strapi, archiveCountFilters),
+                strapi.documents("api::document.document").count({
+                    filters: appendAdminDocumentRetentionFilter(archiveCountFilters),
                 } as any),
             ]);
 
@@ -2729,6 +2753,8 @@ export default factories.createCoreController(
                     page,
                     pageSize,
                     pageCount: Math.ceil(total / pageSize),
+                    statusCounts,
+                    retentionCount,
                 },
             });
         },
