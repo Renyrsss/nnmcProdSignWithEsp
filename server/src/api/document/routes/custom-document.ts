@@ -49,6 +49,18 @@ export default {
             config: { policies: [], middlewares: [] },
         },
         {
+            method: "GET",
+            path: "/admin/reports",
+            handler: "api::document.document.getAdminReports",
+            config: { policies: [], middlewares: [] },
+        },
+        {
+            method: "GET",
+            path: "/admin/reports/export",
+            handler: "api::document.document.exportAdminReports",
+            config: { policies: [], middlewares: [] },
+        },
+        {
             method: "POST",
             path: "/admin/notification-templates",
             handler: "api::document.document.createAdminNotificationTemplate",

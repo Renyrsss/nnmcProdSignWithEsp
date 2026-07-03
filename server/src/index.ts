@@ -66,6 +66,8 @@ const ADMIN_APP_ACTIONS = [
     "api::document.document.getAdminPlatformSettings",
     "api::document.document.updateAdminPlatformSettings",
     "api::document.document.findAdminNotificationTemplates",
+    "api::document.document.getAdminReports",
+    "api::document.document.exportAdminReports",
     "api::document.document.createAdminNotificationTemplate",
     "api::document.document.updateAdminNotificationTemplate",
     "api::document.document.deleteAdminNotificationTemplate",

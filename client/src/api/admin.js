@@ -26,6 +26,27 @@ export const getAdminDocuments = async (params = {}) => {
     return response.data;
 };
 
+export const getAdminReports = async (params = {}) => {
+    const query = buildQuery(params);
+    const response = await axios.get(
+        `${API_URL}/admin/reports${query ? `?${query}` : ""}`,
+        { headers: authHeaders() }
+    );
+    return response.data;
+};
+
+export const exportAdminReportsCsv = async (params = {}) => {
+    const query = buildQuery(params);
+    const response = await axios.get(
+        `${API_URL}/admin/reports/export${query ? `?${query}` : ""}`,
+        {
+            headers: authHeaders(),
+            responseType: "blob",
+        }
+    );
+    return response.data;
+};
+
 export const getAdminDocument = async (id) => {
     const response = await axios.get(`${API_URL}/admin/documents/${id}`, {
         headers: authHeaders(),

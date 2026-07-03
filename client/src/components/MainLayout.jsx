@@ -19,6 +19,7 @@ import {
     ShieldCheck,
     Settings,
     Bell,
+    BarChart3,
 } from "lucide-react";
 
 export default function MainLayout() {
@@ -176,6 +177,15 @@ export default function MainLayout() {
             isActive: () =>
                 pathname === "/admin/notifications" ||
                 pathname.startsWith("/admin/notifications/"),
+        },
+        {
+            to: "/admin/reports",
+            label: "Отчеты",
+            shortLabel: "Отч.",
+            icon: BarChart3,
+            isActive: () =>
+                pathname === "/admin/reports" ||
+                pathname.startsWith("/admin/reports/"),
         },
     ];
 

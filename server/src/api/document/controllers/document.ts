@@ -1226,6 +1226,272 @@ const findNotificationTemplateById = async (strapi: any, id: any) => {
         .findOne({ where: { id: numericId } });
 };
 
+const REPORT_STATUS_KEYS = [
+    "pending",
+    "in_progress",
+    "completed",
+    "cancelled",
+    "revision",
+];
+
+const getReportDateRangeLabel = (query: any) => ({
+    dateFrom: normalizeQueryValue(query.dateFrom) || null,
+    dateTo: normalizeQueryValue(query.dateTo) || null,
+});
+
+const getSignedAtTime = (entry: any) =>
+    getDateTime(entry?.signedAt || entry?.date || entry?.timestamp);
+
+const getCompletionTime = (document: any) => {
+    const historyTimes = getSignatureHistory(document)
+        .map(getSignedAtTime)
+        .filter((time: any) => Number.isFinite(time));
+    const signerTimes = getDocumentSigners(document)
+        .map((signer: any) => getDateTime(signer?.signedAt))
+        .filter((time: any) => Number.isFinite(time));
+    const allTimes = [...historyTimes, ...signerTimes];
+
+    if (allTimes.length > 0) return Math.max(...allTimes);
+    return getDateTime(document?.updatedAt);
+};
+
+const hoursBetween = (from: any, to: any) => {
+    const fromMs = getDateTime(from);
+    const toMs = Number.isFinite(to) ? to : getDateTime(to);
+    if (!fromMs || !toMs || toMs < fromMs) return null;
+    return (toMs - fromMs) / 36e5;
+};
+
+const getDepartmentKey = (document: any) => {
+    const department = document?.creator?.department;
+    return {
+        id: department?.id || null,
+        name: department?.name || "Без отдела",
+    };
+};
+
+const getUserDisplayName = (user: any) =>
+    user?.fullName || user?.username || user?.email || "Пользователь";
+
+const getOrInitGroup = (map: Map<string, any>, key: string, seed: any) => {
+    if (!map.has(key)) map.set(key, seed);
+    return map.get(key);
+};
+
+const sortReportRows = (rows: any[]) =>
+    rows.sort((a, b) => (b.total || 0) - (a.total || 0) || a.name.localeCompare(b.name, "ru"));
+
+const buildAdminReportsData = (documents: any[], query: any) => {
+    const nowMs = Date.now();
+    const statusCounts = REPORT_STATUS_KEYS.reduce((acc: any, status) => {
+        acc[status] = 0;
+        return acc;
+    }, {});
+    const departmentMap = new Map<string, any>();
+    const userMap = new Map<string, any>();
+    const overdueDocuments: any[] = [];
+    let totalSigningHours = 0;
+    let completedWithDuration = 0;
+
+    for (const document of documents) {
+        const status = document.status || "pending";
+        statusCounts[status] = (statusCounts[status] || 0) + 1;
+
+        const completionTime = status === "completed" ? getCompletionTime(document) : null;
+        const signingHours = completionTime
+            ? hoursBetween(document.createdAt, completionTime)
+            : null;
+        if (Number.isFinite(signingHours)) {
+            totalSigningHours += signingHours;
+            completedWithDuration++;
+        }
+
+        const isOverdue = Boolean(
+            ACTIVE_DOCUMENT_STATUSES.has(status) &&
+                getDocumentSigners(document).some(
+                    (signer: any) => signer?.status !== "signed"
+                ) &&
+                getDateTime(document.signingDeadlineAt) &&
+                getDateTime(document.signingDeadlineAt)! < nowMs
+        );
+        if (isOverdue) {
+            overdueDocuments.push({
+                id: document.id,
+                documentId: document.documentId,
+                uid: document.uid,
+                title: document.title,
+                status,
+                signingDeadlineAt: document.signingDeadlineAt,
+                creatorName: getUserDisplayName(document.creator),
+                departmentName: document.creator?.department?.name || "Без отдела",
+            });
+        }
+
+        const department = getDepartmentKey(document);
+        const departmentRow = getOrInitGroup(
+            departmentMap,
+            String(department.id || "none"),
+            {
+                id: department.id,
+                name: department.name,
+                total: 0,
+                completed: 0,
+                cancelled: 0,
+                inProgress: 0,
+                overdue: 0,
+                averageSigningHours: 0,
+                signingHoursTotal: 0,
+                signingHoursCount: 0,
+            }
+        );
+        departmentRow.total++;
+        if (status === "completed") departmentRow.completed++;
+        if (status === "cancelled") departmentRow.cancelled++;
+        if (ACTIVE_DOCUMENT_STATUSES.has(status)) departmentRow.inProgress++;
+        if (isOverdue) departmentRow.overdue++;
+        if (Number.isFinite(signingHours)) {
+            departmentRow.signingHoursTotal += signingHours;
+            departmentRow.signingHoursCount++;
+        }
+
+        if (document.creator) {
+            const creatorKey = String(document.creator.id);
+            const creatorRow = getOrInitGroup(userMap, creatorKey, {
+                id: document.creator.id,
+                name: getUserDisplayName(document.creator),
+                email: document.creator.email,
+                departmentName: document.creator.department?.name || "Без отдела",
+                created: 0,
+                signed: 0,
+                total: 0,
+            });
+            creatorRow.created++;
+            creatorRow.total++;
+        }
+
+        for (const entry of getSignatureHistory(document)) {
+            const userId = Number(entry?.userId);
+            if (!Number.isFinite(userId)) continue;
+            const key = String(userId);
+            const row = getOrInitGroup(userMap, key, {
+                id: userId,
+                name: entry.userName || `ID ${userId}`,
+                email: "",
+                departmentName: "",
+                created: 0,
+                signed: 0,
+                total: 0,
+            });
+            row.signed++;
+            row.total++;
+        }
+    }
+
+    const departments = sortReportRows(
+        Array.from(departmentMap.values()).map((row) => ({
+            ...row,
+            averageSigningHours: row.signingHoursCount
+                ? row.signingHoursTotal / row.signingHoursCount
+                : null,
+            signingHoursTotal: undefined,
+            signingHoursCount: undefined,
+        }))
+    );
+
+    const users = Array.from(userMap.values()).sort(
+        (a, b) => (b.total || 0) - (a.total || 0) || a.name.localeCompare(b.name, "ru")
+    );
+
+    return {
+        period: getReportDateRangeLabel(query),
+        summary: {
+            total: documents.length,
+            created: documents.length,
+            signed: statusCounts.completed || 0,
+            cancelled: statusCounts.cancelled || 0,
+            inProgress:
+                (statusCounts.pending || 0) +
+                (statusCounts.in_progress || 0) +
+                (statusCounts.revision || 0),
+            overdue: overdueDocuments.length,
+            averageSigningHours: completedWithDuration
+                ? totalSigningHours / completedWithDuration
+                : null,
+            statusCounts,
+        },
+        departments,
+        users,
+        overdueDocuments: overdueDocuments
+            .sort(
+                (a, b) =>
+                    getDateTime(a.signingDeadlineAt)! -
+                    getDateTime(b.signingDeadlineAt)!
+            )
+            .slice(0, 100),
+    };
+};
+
+const csvEscape = (value: any) => {
+    if (value === undefined || value === null) return "";
+    const text = String(value);
+    if (/[",\n\r;]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
+    return text;
+};
+
+const toCsv = (rows: any[][]) =>
+    rows.map((row) => row.map(csvEscape).join(";")).join("\n");
+
+const buildDocumentsReportCsv = (documents: any[]) => {
+    const rows = [
+        [
+            "ID",
+            "UID",
+            "Название",
+            "Статус",
+            "Автор",
+            "Отдел",
+            "Тип документа",
+            "Создан",
+            "Срок подписания",
+            "Подписей",
+            "Всего подписантов",
+            "Просрочен",
+        ],
+    ];
+    const nowMs = Date.now();
+
+    for (const document of documents) {
+        const signers = getDocumentSigners(document);
+        const signedCount = signers.filter(
+            (signer: any) => signer?.status === "signed"
+        ).length;
+        const deadlineMs = getDateTime(document.signingDeadlineAt);
+        const overdue = Boolean(
+            ACTIVE_DOCUMENT_STATUSES.has(document.status) &&
+                signers.some((signer: any) => signer?.status !== "signed") &&
+                deadlineMs &&
+                deadlineMs < nowMs
+        );
+
+        rows.push([
+            document.id,
+            document.uid || document.documentId || "",
+            document.title,
+            document.status,
+            getUserDisplayName(document.creator),
+            document.creator?.department?.name || "Без отдела",
+            document.documentType?.name || "",
+            document.createdAt,
+            document.signingDeadlineAt || "",
+            signedCount,
+            signers.length,
+            overdue ? "Да" : "Нет",
+        ]);
+    }
+
+    return toCsv(rows);
+};
+
 const findDocumentForAccess = async (strapi: any, id: string | number) => {
     try {
         const document = await strapi
@@ -1584,6 +1850,63 @@ export default factories.createCoreController(
                     pageCount: Math.ceil(total / pageSize),
                 },
             });
+        },
+
+        /**
+         * GET /api/admin/reports
+         */
+        async getAdminReports(ctx) {
+            const admin = await requireAppAdmin(ctx, strapi);
+            if (!admin) return;
+
+            const filters = buildAdminDocumentFilters(ctx.query);
+            const documents = await strapi.documents("api::document.document").findMany({
+                filters,
+                populate: getDocumentPopulate(),
+                sort: { createdAt: "desc" } as any,
+                limit: 10000,
+            } as any);
+
+            return ctx.send({
+                data: buildAdminReportsData(documents, ctx.query),
+                meta: {
+                    totalDocumentsScanned: documents.length,
+                },
+            });
+        },
+
+        /**
+         * GET /api/admin/reports/export
+         */
+        async exportAdminReports(ctx) {
+            const admin = await requireAppAdmin(ctx, strapi);
+            if (!admin) return;
+
+            const filters = buildAdminDocumentFilters(ctx.query);
+            const documents = await strapi.documents("api::document.document").findMany({
+                filters,
+                populate: getDocumentPopulate(),
+                sort: { createdAt: "desc" } as any,
+                limit: 10000,
+            } as any);
+            const csv = buildDocumentsReportCsv(documents);
+            const exportedAt = new Date().toISOString().slice(0, 10);
+
+            await createAuditLog(strapi, ctx, "report_exported", {
+                actor: admin,
+                metadata: {
+                    format: "csv",
+                    documentsCount: documents.length,
+                    ...getReportDateRangeLabel(ctx.query),
+                },
+            });
+
+            ctx.set("Content-Type", "text/csv; charset=utf-8");
+            ctx.set(
+                "Content-Disposition",
+                `attachment; filename="documents-report-${exportedAt}.csv"`
+            );
+            return ctx.send(`\uFEFF${csv}`);
         },
 
         /**

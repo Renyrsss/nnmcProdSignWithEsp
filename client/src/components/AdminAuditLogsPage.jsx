@@ -32,6 +32,7 @@ const EVENT_LABELS = {
     notification_template_created: "Шаблон уведомления создан",
     notification_template_updated: "Шаблон уведомления изменен",
     notification_template_deleted: "Шаблон уведомления удален",
+    report_exported: "Отчет выгружен",
     document_deleted: "Документ удален",
 };
 
@@ -52,6 +53,7 @@ const EVENT_STYLES = {
     notification_template_created: "bg-blue-100 text-blue-800",
     notification_template_updated: "bg-purple-100 text-purple-800",
     notification_template_deleted: "bg-red-100 text-red-800",
+    report_exported: "bg-emerald-100 text-emerald-800",
     document_deleted: "bg-red-100 text-red-800",
 };
 
@@ -87,6 +89,10 @@ const formatMetadata = (metadata) => {
     }
     if (metadata.code) visible.push(`Код: ${metadata.code}`);
     if (metadata.channel) visible.push(`Канал: ${metadata.channel}`);
+    if (metadata.format) visible.push(`Формат: ${metadata.format}`);
+    if (metadata.documentsCount !== undefined) {
+        visible.push(`Документов: ${metadata.documentsCount}`);
+    }
 
     if (visible.length > 0) return visible.join("; ");
     return JSON.stringify(metadata);

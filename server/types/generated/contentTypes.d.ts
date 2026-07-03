@@ -472,6 +472,7 @@ export interface ApiAuditLogAuditLog extends Struct.CollectionTypeSchema {
         'notification_template_created',
         'notification_template_updated',
         'notification_template_deleted',
+        'report_exported',
         'document_deleted',
       ]
     > &
