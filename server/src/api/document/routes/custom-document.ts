@@ -25,6 +25,18 @@ export default {
             config: { policies: [], middlewares: [] },
         },
         {
+            method: "POST",
+            path: "/admin/users",
+            handler: "api::document.document.createAdminUser",
+            config: { policies: [], middlewares: [] },
+        },
+        {
+            method: "PUT",
+            path: "/admin/users/:id",
+            handler: "api::document.document.updateAdminUser",
+            config: { policies: [], middlewares: [] },
+        },
+        {
             method: "PUT",
             path: "/admin/users/:id/password",
             handler: "api::document.document.updateAdminUserPassword",
@@ -34,6 +46,24 @@ export default {
             method: "PUT",
             path: "/admin/users/:id/status",
             handler: "api::document.document.updateAdminUserStatus",
+            config: { policies: [], middlewares: [] },
+        },
+        {
+            method: "POST",
+            path: "/admin/departments",
+            handler: "api::document.document.createAdminDepartment",
+            config: { policies: [], middlewares: [] },
+        },
+        {
+            method: "PUT",
+            path: "/admin/departments/:id",
+            handler: "api::document.document.updateAdminDepartment",
+            config: { policies: [], middlewares: [] },
+        },
+        {
+            method: "DELETE",
+            path: "/admin/departments/:id",
+            handler: "api::document.document.deleteAdminDepartment",
             config: { policies: [], middlewares: [] },
         },
         {

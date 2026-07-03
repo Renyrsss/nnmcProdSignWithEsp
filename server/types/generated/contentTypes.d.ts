@@ -451,6 +451,10 @@ export interface ApiDepartmentDepartment extends Struct.CollectionTypeSchema {
       'api::department.department'
     > &
       Schema.Attribute.Private;
+    manager: Schema.Attribute.Relation<
+      'manyToOne',
+      'plugin::users-permissions.user'
+    >;
     name: Schema.Attribute.String &
       Schema.Attribute.Required &
       Schema.Attribute.Unique;

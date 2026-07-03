@@ -8,6 +8,30 @@ const generateUid = (): string =>
 const APP_ADMIN_ROLE_TYPE = "app_admin";
 const APP_ADMIN_ROLE_NAME = "Admin";
 
+const MANAGED_APP_ROLES = [
+    {
+        name: APP_ADMIN_ROLE_NAME,
+        description:
+            "Администратор приложения: просмотр всех документов, пользователей и отделов",
+        type: APP_ADMIN_ROLE_TYPE,
+        admin: true,
+    },
+    {
+        name: "Руководитель",
+        description:
+            "Руководитель подразделения: базовая работа с документами и будущие права контроля отдела",
+        type: "app_manager",
+        admin: false,
+    },
+    {
+        name: "Наблюдатель",
+        description:
+            "Наблюдатель: базовая авторизация и будущие права просмотра без участия в подписании",
+        type: "app_observer",
+        admin: false,
+    },
+];
+
 const AUTHENTICATED_APP_ACTIONS = [
     "plugin::users-permissions.auth.logout",
     "plugin::users-permissions.user.me",
@@ -37,8 +61,13 @@ const ADMIN_APP_ACTIONS = [
     "api::document.document.findAdminDocuments",
     "api::document.document.findAdminDocument",
     "api::document.document.findAdminUsers",
+    "api::document.document.createAdminUser",
+    "api::document.document.updateAdminUser",
     "api::document.document.updateAdminUserPassword",
     "api::document.document.updateAdminUserStatus",
+    "api::document.document.createAdminDepartment",
+    "api::document.document.updateAdminDepartment",
+    "api::document.document.deleteAdminDepartment",
 ];
 
 const ensurePermission = async (
@@ -67,32 +96,45 @@ const ensurePermission = async (
     return true;
 };
 
-const ensureAppAdminRole = async (strapi: any) => {
+const ensureManagedRole = async (strapi: any, definition: any) => {
     let role = await strapi.db
         .query("plugin::users-permissions.role")
-        .findOne({ where: { type: APP_ADMIN_ROLE_TYPE } });
+        .findOne({ where: { type: definition.type } });
 
     if (!role) {
         role = await strapi.db.query("plugin::users-permissions.role").findOne({
-            where: { name: APP_ADMIN_ROLE_NAME },
+            where: { name: definition.name },
         });
     }
 
     if (!role) {
         role = await strapi.db.query("plugin::users-permissions.role").create({
             data: {
-                name: APP_ADMIN_ROLE_NAME,
-                description:
-                    "Администратор приложения: просмотр всех документов, пользователей и отделов",
-                type: APP_ADMIN_ROLE_TYPE,
+                name: definition.name,
+                description: definition.description,
+                type: definition.type,
             },
         });
-        strapi.log.info("[app-admin] создана users-permissions роль Admin");
+        strapi.log.info(
+            `[app-roles] создана users-permissions роль ${definition.name}`
+        );
     }
 
+    return role;
+};
+
+const ensureAppAdminRole = async (strapi: any) => {
     let createdCount = 0;
-    for (const action of [...AUTHENTICATED_APP_ACTIONS, ...ADMIN_APP_ACTIONS]) {
-        if (await ensurePermission(strapi, role.id, action)) createdCount++;
+
+    for (const definition of MANAGED_APP_ROLES) {
+        const role = await ensureManagedRole(strapi, definition);
+        const actions = definition.admin
+            ? [...AUTHENTICATED_APP_ACTIONS, ...ADMIN_APP_ACTIONS]
+            : AUTHENTICATED_APP_ACTIONS;
+
+        for (const action of actions) {
+            if (await ensurePermission(strapi, role.id, action)) createdCount++;
+        }
     }
 
     const authenticatedRole = await strapi.db

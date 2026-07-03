@@ -23,6 +23,11 @@
       "target": "plugin::users-permissions.user",
       "mappedBy": "department"
     },
+    "manager": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "plugin::users-permissions.user"
+    },
     "subdivisions": {
       "type": "relation",
       "relation": "oneToMany",

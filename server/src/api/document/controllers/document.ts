@@ -4,6 +4,12 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 const APP_ADMIN_ROLE_TYPE = "app_admin";
 const APP_ADMIN_ROLE_NAMES = ["admin", "administrator", "администратор"];
+const ASSIGNABLE_ROLE_TYPES = [
+    "authenticated",
+    "app_admin",
+    "app_manager",
+    "app_observer",
+];
 
 const isAppAdminRole = (role: any): boolean => {
     if (!role) return false;
@@ -15,6 +21,133 @@ const isAppAdminRole = (role: any): boolean => {
         APP_ADMIN_ROLE_NAMES.includes(name)
     );
 };
+
+const cleanString = (value: any) => String(value || "").trim();
+
+const normalizeOptionalId = (value: any) => {
+    if (value === undefined || value === null || value === "" || value === "none") {
+        return null;
+    }
+
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+};
+
+const isEmptyRelationId = (value: any) =>
+    value === undefined || value === null || value === "" || value === "none";
+
+const isEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+
+const toSafeRole = (role: any) =>
+    role
+        ? {
+              id: role.id,
+              name: role.name,
+              type: role.type,
+              description: role.description,
+          }
+        : null;
+
+const toSafeDepartment = (department: any) =>
+    department
+        ? {
+              id: department.id,
+              name: department.name,
+          }
+        : null;
+
+const toSafeUser = (user: any) => ({
+    id: user.id,
+    username: user.username,
+    email: user.email,
+    fullName: user.fullName,
+    confirmed: user.confirmed,
+    blocked: user.blocked,
+    createdAt: user.createdAt,
+    updatedAt: user.updatedAt,
+    role: toSafeRole(user.role),
+    department: toSafeDepartment(user.department),
+    isAdmin: isAppAdminRole(user.role),
+});
+
+const getAssignableRoles = async (strapi: any) => {
+    const roles = await strapi.db
+        .query("plugin::users-permissions.role")
+        .findMany({ orderBy: [{ name: "asc" }] });
+
+    return roles
+        .filter((role: any) => role.type !== "public")
+        .filter(
+            (role: any) =>
+                ASSIGNABLE_ROLE_TYPES.includes(role.type) ||
+                isAppAdminRole(role)
+        )
+        .map(toSafeRole);
+};
+
+const getRoleForAssignment = async (strapi: any, roleId: any) => {
+    const useDefaultRole = isEmptyRelationId(roleId);
+    const normalizedRoleId = normalizeOptionalId(roleId);
+    if (useDefaultRole) {
+        return strapi.db.query("plugin::users-permissions.role").findOne({
+            where: { type: "authenticated" },
+        });
+    }
+    if (!normalizedRoleId) return null;
+
+    const role = await strapi.db
+        .query("plugin::users-permissions.role")
+        .findOne({ where: { id: normalizedRoleId } });
+
+    if (!role || role.type === "public") return null;
+    if (!ASSIGNABLE_ROLE_TYPES.includes(role.type) && !isAppAdminRole(role)) {
+        return null;
+    }
+
+    return role;
+};
+
+const getDepartmentForAssignment = async (strapi: any, departmentId: any) => {
+    const normalizedDepartmentId = normalizeOptionalId(departmentId);
+    if (!normalizedDepartmentId) return null;
+
+    return strapi.db
+        .query("api::department.department")
+        .findOne({ where: { id: normalizedDepartmentId } });
+};
+
+const getUserForAssignment = async (strapi: any, userId: any) => {
+    const normalizedUserId = normalizeOptionalId(userId);
+    if (!normalizedUserId) return null;
+
+    return strapi.db
+        .query("plugin::users-permissions.user")
+        .findOne({ where: { id: normalizedUserId } });
+};
+
+const toSafeDepartmentSummary = (department: any) => ({
+    id: department.id,
+    name: department.name,
+    usersCount: Array.isArray(department.users) ? department.users.length : 0,
+    manager: department.manager
+        ? {
+              id: department.manager.id,
+              username: department.manager.username,
+              fullName: department.manager.fullName,
+              email: department.manager.email,
+          }
+        : null,
+    subdivisions: Array.isArray(department.subdivisions)
+        ? department.subdivisions
+              .map((subdivision: any) => ({
+                  id: subdivision.id,
+                  name: subdivision.name,
+              }))
+              .sort((a: any, b: any) =>
+                  (a.name || "").localeCompare(b.name || "", "ru")
+              )
+        : [],
+});
 
 const getAuthenticatedUser = async (strapi: any, userId: number | string) => {
     return strapi.db.query("plugin::users-permissions.user").findOne({
@@ -491,16 +624,53 @@ export default factories.createCoreController(
             const admin = await requireAppAdmin(ctx, strapi);
             if (!admin) return;
 
-            const [users, departments] = await Promise.all([
-                strapi.db.query("plugin::users-permissions.user").findMany({
-                    orderBy: [{ username: "asc" }],
-                    populate: ["department", "role"],
-                }),
-                strapi.db.query("api::department.department").findMany({
-                    orderBy: [{ name: "asc" }],
-                    populate: ["users", "subdivisions"],
-                }),
-            ]);
+            const [users, departments, roles, documentsForSignatureStats] =
+                await Promise.all([
+                    strapi.db.query("plugin::users-permissions.user").findMany({
+                        orderBy: [{ username: "asc" }],
+                        populate: ["department", "role"],
+                    }),
+                    strapi.db.query("api::department.department").findMany({
+                        orderBy: [{ name: "asc" }],
+                        populate: ["users", "subdivisions", "manager"],
+                    }),
+                    getAssignableRoles(strapi),
+                    strapi.db.query("api::document.document").findMany({
+                        select: ["id", "signers", "signatureHistory"],
+                    }),
+                ]);
+
+            const signedDocumentsCountByUser = new Map<number, number>();
+            for (const document of documentsForSignatureStats || []) {
+                const signedUserIds = new Set<number>();
+                const signers = Array.isArray(document.signers)
+                    ? document.signers
+                    : [];
+                const history = Array.isArray(document.signatureHistory)
+                    ? document.signatureHistory
+                    : [];
+
+                for (const signer of signers) {
+                    if (signer?.status === "signed") {
+                        const userId = Number(signer.userId);
+                        if (Number.isFinite(userId)) signedUserIds.add(userId);
+                    }
+                }
+
+                for (const item of history) {
+                    if (item?.signedAt && item?.userId) {
+                        const userId = Number(item.userId);
+                        if (Number.isFinite(userId)) signedUserIds.add(userId);
+                    }
+                }
+
+                for (const userId of signedUserIds) {
+                    signedDocumentsCountByUser.set(
+                        userId,
+                        (signedDocumentsCountByUser.get(userId) || 0) + 1
+                    );
+                }
+            }
 
             const usersWithStats = await Promise.all(
                 users.map(async (user: any) => {
@@ -515,64 +685,180 @@ export default factories.createCoreController(
                         ]);
 
                     return {
-                        id: user.id,
-                        username: user.username,
-                        email: user.email,
-                        fullName: user.fullName,
-                        confirmed: user.confirmed,
-                        blocked: user.blocked,
-                        createdAt: user.createdAt,
-                        updatedAt: user.updatedAt,
-                        role: user.role
-                            ? {
-                                  id: user.role.id,
-                                  name: user.role.name,
-                                  type: user.role.type,
-                              }
-                            : null,
-                        department: user.department
-                            ? {
-                                  id: user.department.id,
-                                  name: user.department.name,
-                              }
-                            : null,
-                        isAdmin: isAppAdminRole(user.role),
+                        ...toSafeUser(user),
                         stats: {
                             createdDocumentsCount,
                             assignedDocumentsCount,
+                            signedDocumentsCount:
+                                signedDocumentsCountByUser.get(Number(user.id)) || 0,
                         },
                     };
                 })
             );
 
-            const safeDepartments = departments.map((department: any) => ({
-                id: department.id,
-                name: department.name,
-                usersCount: Array.isArray(department.users)
-                    ? department.users.length
-                    : 0,
-                subdivisions: Array.isArray(department.subdivisions)
-                    ? department.subdivisions
-                          .map((subdivision: any) => ({
-                              id: subdivision.id,
-                              name: subdivision.name,
-                          }))
-                          .sort((a: any, b: any) =>
-                              (a.name || "").localeCompare(b.name || "", "ru")
-                          )
-                    : [],
-            }));
+            const safeDepartments = departments.map(toSafeDepartmentSummary);
 
             return ctx.send({
                 data: {
                     users: usersWithStats,
                     departments: safeDepartments,
+                    roles,
                 },
                 meta: {
                     usersCount: usersWithStats.length,
                     departmentsCount: safeDepartments.length,
+                    rolesCount: roles.length,
                 },
             });
+        },
+
+        /**
+         * POST /api/admin/users
+         */
+        async createAdminUser(ctx) {
+            const admin = await requireAppAdmin(ctx, strapi);
+            if (!admin) return;
+
+            const body = ctx.request.body || {};
+            const username = cleanString(body.username);
+            const email = cleanString(body.email).toLowerCase();
+            const fullName = cleanString(body.fullName);
+            const password = String(body.password || "");
+            const blocked = Boolean(body.blocked);
+
+            if (username.length < 3) {
+                return ctx.badRequest("Логин должен быть не короче 3 символов");
+            }
+            if (!isEmail(email)) {
+                return ctx.badRequest("Укажите корректный email");
+            }
+            if (password.length < 8) {
+                return ctx.badRequest("Пароль должен быть не короче 8 символов");
+            }
+
+            const [sameUsername, sameEmail, role, department] = await Promise.all([
+                strapi.db
+                    .query("plugin::users-permissions.user")
+                    .findOne({ where: { username } }),
+                strapi.db
+                    .query("plugin::users-permissions.user")
+                    .findOne({ where: { email } }),
+                getRoleForAssignment(strapi, body.roleId),
+                getDepartmentForAssignment(strapi, body.departmentId),
+            ]);
+
+            if (sameUsername) return ctx.badRequest("Пользователь с таким логином уже существует");
+            if (sameEmail) return ctx.badRequest("Пользователь с таким email уже существует");
+            if (!role) return ctx.badRequest("Некорректная роль пользователя");
+            if (body.departmentId && !department) {
+                return ctx.badRequest("Отдел не найден");
+            }
+
+            const created = await strapi
+                .plugin("users-permissions")
+                .service("user")
+                .add({
+                    username,
+                    email,
+                    password,
+                    fullName,
+                    provider: "local",
+                    confirmed: true,
+                    blocked,
+                    role: role.id,
+                    department: department ? department.id : null,
+                });
+
+            const user = await strapi.db
+                .query("plugin::users-permissions.user")
+                .findOne({
+                    where: { id: created.id },
+                    populate: ["role", "department"],
+                });
+
+            strapi.log.info(
+                `[app-admin] user=${admin.id} created user=${created.id}`
+            );
+
+            return ctx.created({ data: toSafeUser(user) });
+        },
+
+        /**
+         * PUT /api/admin/users/:id
+         */
+        async updateAdminUser(ctx) {
+            const admin = await requireAppAdmin(ctx, strapi);
+            if (!admin) return;
+
+            const { id } = ctx.params;
+            const body = ctx.request.body || {};
+            const username = cleanString(body.username);
+            const email = cleanString(body.email).toLowerCase();
+            const fullName = cleanString(body.fullName);
+
+            if (username.length < 3) {
+                return ctx.badRequest("Логин должен быть не короче 3 символов");
+            }
+            if (!isEmail(email)) {
+                return ctx.badRequest("Укажите корректный email");
+            }
+
+            const targetUser = await strapi.db
+                .query("plugin::users-permissions.user")
+                .findOne({ where: { id }, populate: ["role"] });
+
+            if (!targetUser) return ctx.notFound("Пользователь не найден");
+
+            const [sameUsername, sameEmail, role, department] = await Promise.all([
+                strapi.db
+                    .query("plugin::users-permissions.user")
+                    .findOne({ where: { username } }),
+                strapi.db
+                    .query("plugin::users-permissions.user")
+                    .findOne({ where: { email } }),
+                getRoleForAssignment(strapi, body.roleId),
+                getDepartmentForAssignment(strapi, body.departmentId),
+            ]);
+
+            if (sameUsername && Number(sameUsername.id) !== Number(id)) {
+                return ctx.badRequest("Пользователь с таким логином уже существует");
+            }
+            if (sameEmail && Number(sameEmail.id) !== Number(id)) {
+                return ctx.badRequest("Пользователь с таким email уже существует");
+            }
+            if (!role) return ctx.badRequest("Некорректная роль пользователя");
+            if (body.departmentId && !department) {
+                return ctx.badRequest("Отдел не найден");
+            }
+            if (Number(id) === Number(admin.id) && !isAppAdminRole(role)) {
+                return ctx.badRequest(
+                    "Администратор не может снять админскую роль со своей учетной записи"
+                );
+            }
+
+            await strapi
+                .plugin("users-permissions")
+                .service("user")
+                .edit(targetUser.id, {
+                    username,
+                    email,
+                    fullName,
+                    role: role.id,
+                    department: department ? department.id : null,
+                });
+
+            const updated = await strapi.db
+                .query("plugin::users-permissions.user")
+                .findOne({
+                    where: { id },
+                    populate: ["role", "department"],
+                });
+
+            strapi.log.info(
+                `[app-admin] user=${admin.id} updated user=${targetUser.id}`
+            );
+
+            return ctx.send({ data: toSafeUser(updated) });
         },
 
         /**
@@ -647,6 +933,153 @@ export default factories.createCoreController(
                     blocked: updated.blocked,
                 },
             });
+        },
+
+        /**
+         * POST /api/admin/departments
+         */
+        async createAdminDepartment(ctx) {
+            const admin = await requireAppAdmin(ctx, strapi);
+            if (!admin) return;
+
+            const name = cleanString(ctx.request.body?.name);
+            const managerId = ctx.request.body?.managerId;
+
+            if (name.length < 2) {
+                return ctx.badRequest("Название отдела должно быть не короче 2 символов");
+            }
+
+            const [sameName, manager] = await Promise.all([
+                strapi.db
+                    .query("api::department.department")
+                    .findOne({ where: { name } }),
+                getUserForAssignment(strapi, managerId),
+            ]);
+
+            if (sameName) return ctx.badRequest("Отдел с таким названием уже существует");
+            if (!isEmptyRelationId(managerId) && !manager) {
+                return ctx.badRequest("Руководитель отдела не найден");
+            }
+
+            const created = await strapi.db
+                .query("api::department.department")
+                .create({
+                    data: {
+                        name,
+                        manager: manager ? manager.id : null,
+                    },
+                });
+
+            const department = await strapi.db
+                .query("api::department.department")
+                .findOne({
+                    where: { id: created.id },
+                    populate: ["users", "subdivisions", "manager"],
+                });
+
+            strapi.log.info(
+                `[app-admin] user=${admin.id} created department=${created.id}`
+            );
+
+            return ctx.created({ data: toSafeDepartmentSummary(department) });
+        },
+
+        /**
+         * PUT /api/admin/departments/:id
+         */
+        async updateAdminDepartment(ctx) {
+            const admin = await requireAppAdmin(ctx, strapi);
+            if (!admin) return;
+
+            const { id } = ctx.params;
+            const name = cleanString(ctx.request.body?.name);
+            const managerId = ctx.request.body?.managerId;
+
+            if (name.length < 2) {
+                return ctx.badRequest("Название отдела должно быть не короче 2 символов");
+            }
+
+            const targetDepartment = await strapi.db
+                .query("api::department.department")
+                .findOne({ where: { id } });
+
+            if (!targetDepartment) return ctx.notFound("Отдел не найден");
+
+            const [sameName, manager] = await Promise.all([
+                strapi.db
+                    .query("api::department.department")
+                    .findOne({ where: { name } }),
+                getUserForAssignment(strapi, managerId),
+            ]);
+
+            if (sameName && Number(sameName.id) !== Number(id)) {
+                return ctx.badRequest("Отдел с таким названием уже существует");
+            }
+            if (!isEmptyRelationId(managerId) && !manager) {
+                return ctx.badRequest("Руководитель отдела не найден");
+            }
+
+            await strapi.db.query("api::department.department").update({
+                where: { id },
+                data: {
+                    name,
+                    manager: manager ? manager.id : null,
+                },
+            });
+
+            const updated = await strapi.db
+                .query("api::department.department")
+                .findOne({
+                    where: { id },
+                    populate: ["users", "subdivisions", "manager"],
+                });
+
+            strapi.log.info(
+                `[app-admin] user=${admin.id} updated department=${targetDepartment.id}`
+            );
+
+            return ctx.send({ data: toSafeDepartmentSummary(updated) });
+        },
+
+        /**
+         * DELETE /api/admin/departments/:id
+         */
+        async deleteAdminDepartment(ctx) {
+            const admin = await requireAppAdmin(ctx, strapi);
+            if (!admin) return;
+
+            const { id } = ctx.params;
+            const department = await strapi.db
+                .query("api::department.department")
+                .findOne({
+                    where: { id },
+                    populate: ["users", "subdivisions"],
+                });
+
+            if (!department) return ctx.notFound("Отдел не найден");
+
+            const usersCount = Array.isArray(department.users)
+                ? department.users.length
+                : 0;
+            const subdivisionsCount = Array.isArray(department.subdivisions)
+                ? department.subdivisions.length
+                : 0;
+
+            if (usersCount > 0 || subdivisionsCount > 0) {
+                return ctx.badRequest(
+                    "Нельзя удалить отдел, пока в нем есть пользователи или подразделения"
+                );
+            }
+
+            await strapi.db.query("api::department.department").delete({
+                where: { id },
+            });
+
+            strapi.log.info(
+                `[app-admin] user=${admin.id} deleted department=${department.id}`
+            );
+
+            return ctx.send({ data: { id: department.id } });
         },
 
         /**

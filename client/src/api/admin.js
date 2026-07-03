@@ -40,6 +40,43 @@ export const getAdminUsers = async () => {
     return response.data.data;
 };
 
+export const createAdminUser = async (payload) => {
+    const response = await axios.post(`${API_URL}/admin/users`, payload, {
+        headers: authHeaders(),
+    });
+    return response.data.data;
+};
+
+export const updateAdminUser = async (userId, payload) => {
+    const response = await axios.put(`${API_URL}/admin/users/${userId}`, payload, {
+        headers: authHeaders(),
+    });
+    return response.data.data;
+};
+
+export const createAdminDepartment = async (payload) => {
+    const response = await axios.post(`${API_URL}/admin/departments`, payload, {
+        headers: authHeaders(),
+    });
+    return response.data.data;
+};
+
+export const updateAdminDepartment = async (departmentId, payload) => {
+    const response = await axios.put(
+        `${API_URL}/admin/departments/${departmentId}`,
+        payload,
+        { headers: authHeaders() }
+    );
+    return response.data.data;
+};
+
+export const deleteAdminDepartment = async (departmentId) => {
+    const response = await axios.delete(`${API_URL}/admin/departments/${departmentId}`, {
+        headers: authHeaders(),
+    });
+    return response.data.data;
+};
+
 export const changeUserPassword = async (userId, password) => {
     const response = await axios.put(
         `${API_URL}/admin/users/${userId}/password`,
