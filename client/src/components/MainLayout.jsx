@@ -3,8 +3,10 @@ import { Outlet, NavLink, useLocation } from "react-router-dom";
 import {
     logout,
     getCurrentUser,
+    getToken,
     isAdminUser,
     refreshCurrentUser,
+    recordSecurityHeartbeat,
 } from "../api/auth";
 import { getActionablePendingDocuments } from "../api/documents";
 import {
@@ -21,6 +23,7 @@ import {
     Bell,
     BarChart3,
     Archive,
+    ShieldAlert,
 } from "lucide-react";
 
 export default function MainLayout() {
@@ -61,6 +64,27 @@ export default function MainLayout() {
             .catch((error) => {
                 console.error("Ошибка обновления пользователя:", error);
             });
+    }, []);
+
+    useEffect(() => {
+        let mounted = true;
+
+        const heartbeat = async () => {
+            try {
+                await recordSecurityHeartbeat();
+            } catch (error) {
+                console.error("Сессия завершена или heartbeat недоступен:", error);
+                if (mounted && !getToken()) window.location.reload();
+            }
+        };
+
+        heartbeat();
+        const interval = setInterval(heartbeat, 30000);
+
+        return () => {
+            mounted = false;
+            clearInterval(interval);
+        };
     }, []);
 
     const handleLogout = () => {
@@ -196,6 +220,15 @@ export default function MainLayout() {
             isActive: () =>
                 pathname === "/admin/archive" ||
                 pathname.startsWith("/admin/archive/"),
+        },
+        {
+            to: "/admin/security",
+            label: "Безопасность",
+            shortLabel: "Безоп.",
+            icon: ShieldAlert,
+            isActive: () =>
+                pathname === "/admin/security" ||
+                pathname.startsWith("/admin/security/"),
         },
     ];
 

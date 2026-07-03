@@ -8,6 +8,22 @@ const storeUser = (user) => {
     }
 };
 
+const getStoredSessionVersion = () => {
+    try {
+        const user = JSON.parse(localStorage.getItem("user") || "null");
+        return user?.sessionVersion || null;
+    } catch {
+        return null;
+    }
+};
+
+const authHeaders = () => {
+    const headers = { Authorization: `Bearer ${getToken()}` };
+    const sessionVersion = getStoredSessionVersion();
+    if (sessionVersion) headers["X-Session-Version"] = String(sessionVersion);
+    return headers;
+};
+
 export const login = async (identifier, password) => {
     try {
         const response = await axios.post(`${API_URL}/auth/local`, {
@@ -92,16 +108,47 @@ export const refreshCurrentUser = async () => {
     const token = getToken();
     if (!token) return null;
 
-    const response = await axios.get(`${API_URL}/admin/me`, {
-        headers: { Authorization: `Bearer ${token}` },
-    });
-    const user = response.data?.data || response.data;
-    storeUser(user);
-    return user;
+    try {
+        const response = await axios.get(`${API_URL}/admin/me`, {
+            headers: authHeaders(),
+        });
+        const user = response.data?.data || response.data;
+        storeUser(user);
+        return user;
+    } catch (error) {
+        if ([401, 403].includes(error.response?.status)) logout();
+        throw error;
+    }
 };
 
 export const getMe = async () => {
     return refreshCurrentUser();
+};
+
+export const recordSecurityHeartbeat = async () => {
+    const token = getToken();
+    if (!token) return null;
+
+    try {
+        const response = await axios.post(
+            `${API_URL}/security/heartbeat`,
+            { sessionVersion: getStoredSessionVersion() },
+            { headers: authHeaders() }
+        );
+        const heartbeat = response.data?.data || {};
+        const currentUser = getCurrentUser();
+        if (currentUser) {
+            storeUser({
+                ...currentUser,
+                sessionVersion: heartbeat.sessionVersion || currentUser.sessionVersion,
+                lastSeenAt: heartbeat.lastSeenAt || currentUser.lastSeenAt,
+            });
+        }
+        return heartbeat;
+    } catch (error) {
+        if ([401, 403].includes(error.response?.status)) logout();
+        throw error;
+    }
 };
 
 export const updateUserProfile = async (fullName) => {

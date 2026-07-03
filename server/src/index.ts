@@ -55,6 +55,7 @@ const AUTHENTICATED_APP_ACTIONS = [
     "api::document.document.getFileUrl",
     "api::document.document.presignUrl",
     "api::document.document.reportSignatureError",
+    "api::document.document.recordSecurityHeartbeat",
     "api::document.document.getAppMe",
 ];
 
@@ -72,6 +73,9 @@ const ADMIN_APP_ACTIONS = [
     "api::document.document.archiveAdminDocument",
     "api::document.document.restoreAdminDocument",
     "api::document.document.exportAdminDocumentArchive",
+    "api::document.document.getAdminSecurity",
+    "api::document.document.updateAdminSecuritySettings",
+    "api::document.document.forceLogoutAdminUser",
     "api::document.document.createAdminNotificationTemplate",
     "api::document.document.updateAdminNotificationTemplate",
     "api::document.document.deleteAdminNotificationTemplate",

@@ -67,6 +67,24 @@ export default {
             config: { policies: [], middlewares: [] },
         },
         {
+            method: "GET",
+            path: "/admin/security",
+            handler: "api::document.document.getAdminSecurity",
+            config: { policies: [], middlewares: [] },
+        },
+        {
+            method: "PUT",
+            path: "/admin/security/settings",
+            handler: "api::document.document.updateAdminSecuritySettings",
+            config: { policies: [], middlewares: [] },
+        },
+        {
+            method: "POST",
+            path: "/admin/security/users/:id/force-logout",
+            handler: "api::document.document.forceLogoutAdminUser",
+            config: { policies: [], middlewares: [] },
+        },
+        {
             method: "POST",
             path: "/admin/documents/:id/archive",
             handler: "api::document.document.archiveAdminDocument",
@@ -226,6 +244,12 @@ export default {
             method: "POST",
             path: "/documents/:id/signature-error",
             handler: "api::document.document.reportSignatureError",
+            config: { policies: [], middlewares: [] },
+        },
+        {
+            method: "POST",
+            path: "/security/heartbeat",
+            handler: "api::document.document.recordSecurityHeartbeat",
             config: { policies: [], middlewares: [] },
         },
     ],

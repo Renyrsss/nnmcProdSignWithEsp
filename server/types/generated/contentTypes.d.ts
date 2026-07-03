@@ -476,6 +476,9 @@ export interface ApiAuditLogAuditLog extends Struct.CollectionTypeSchema {
         'document_archived',
         'document_restored',
         'document_archive_exported',
+        'security_settings_updated',
+        'user_forced_logout',
+        'security_suspicious_action',
         'document_deleted',
       ]
     > &
@@ -763,6 +766,49 @@ export interface ApiPlatformSettingPlatformSetting
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
       Schema.Attribute.Private;
+  };
+}
+
+export interface ApiSecuritySettingSecuritySetting
+  extends Struct.CollectionTypeSchema {
+  collectionName: 'security_settings';
+  info: {
+    description: '\u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 \u0431\u0435\u0437\u043E\u043F\u0430\u0441\u043D\u043E\u0441\u0442\u0438 \u043F\u0440\u0438\u043B\u043E\u0436\u0435\u043D\u0438\u044F';
+    displayName: 'Security Setting';
+    pluralName: 'security-settings';
+    singularName: 'security-setting';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  attributes: {
+    allowedIpRanges: Schema.Attribute.JSON;
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+    ipRestrictionEnabled: Schema.Attribute.Boolean &
+      Schema.Attribute.DefaultTo<false>;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<
+      'oneToMany',
+      'api::security-setting.security-setting'
+    > &
+      Schema.Attribute.Private;
+    passwordPolicy: Schema.Attribute.JSON;
+    publishedAt: Schema.Attribute.DateTime;
+    sessionIdleMinutes: Schema.Attribute.Integer &
+      Schema.Attribute.DefaultTo<30>;
+    suspiciousActivityThreshold: Schema.Attribute.Integer &
+      Schema.Attribute.DefaultTo<5>;
+    twoFactorPlanned: Schema.Attribute.Boolean &
+      Schema.Attribute.DefaultTo<false>;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+    updatedByUser: Schema.Attribute.Relation<
+      'manyToOne',
+      'plugin::users-permissions.user'
+    >;
   };
 }
 
@@ -1271,7 +1317,11 @@ export interface PluginUsersPermissionsUser
       Schema.Attribute.SetMinMaxLength<{
         minLength: 6;
       }>;
+    forcedLogoutAt: Schema.Attribute.DateTime;
     fullName: Schema.Attribute.String;
+    lastSeenAt: Schema.Attribute.DateTime;
+    lastSeenIp: Schema.Attribute.String;
+    lastSeenUserAgent: Schema.Attribute.Text;
     locale: Schema.Attribute.String & Schema.Attribute.Private;
     localizations: Schema.Attribute.Relation<
       'oneToMany',
@@ -1290,6 +1340,7 @@ export interface PluginUsersPermissionsUser
       'manyToOne',
       'plugin::users-permissions.role'
     >;
+    sessionVersion: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<1>;
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
       Schema.Attribute.Private;
@@ -1319,6 +1370,7 @@ declare module '@strapi/strapi' {
       'api::document.document': ApiDocumentDocument;
       'api::notification-template.notification-template': ApiNotificationTemplateNotificationTemplate;
       'api::platform-setting.platform-setting': ApiPlatformSettingPlatformSetting;
+      'api::security-setting.security-setting': ApiSecuritySettingSecuritySetting;
       'api::subdivision.subdivision': ApiSubdivisionSubdivision;
       'plugin::content-releases.release': PluginContentReleasesRelease;
       'plugin::content-releases.release-action': PluginContentReleasesReleaseAction;

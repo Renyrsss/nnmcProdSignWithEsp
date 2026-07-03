@@ -15,6 +15,7 @@ import AdminPlatformSettingsPage from "./components/AdminPlatformSettingsPage";
 import AdminNotificationsPage from "./components/AdminNotificationsPage";
 import AdminReportsPage from "./components/AdminReportsPage";
 import AdminArchivePage from "./components/AdminArchivePage";
+import AdminSecurityPage from "./components/AdminSecurityPage";
 import { ToastProvider } from "./components/Toast";
 import "./App.css";
 
@@ -84,6 +85,10 @@ function App() {
                             <Route
                                 path='admin/archive'
                                 element={<AdminArchivePage />}
+                            />
+                            <Route
+                                path='admin/security'
+                                element={<AdminSecurityPage />}
                             />
                         </Route>
                     </Routes>

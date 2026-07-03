@@ -85,6 +85,29 @@ export const exportAdminDocumentArchive = async (documentId) => {
     return response.data;
 };
 
+export const getAdminSecurity = async () => {
+    const response = await axios.get(`${API_URL}/admin/security`, {
+        headers: authHeaders(),
+    });
+    return response.data.data;
+};
+
+export const updateAdminSecuritySettings = async (payload) => {
+    const response = await axios.put(`${API_URL}/admin/security/settings`, payload, {
+        headers: authHeaders(),
+    });
+    return response.data.data;
+};
+
+export const forceLogoutAdminUser = async (userId, reason = "") => {
+    const response = await axios.post(
+        `${API_URL}/admin/security/users/${userId}/force-logout`,
+        { reason },
+        { headers: authHeaders() }
+    );
+    return response.data.data;
+};
+
 export const getAdminDocument = async (id) => {
     const response = await axios.get(`${API_URL}/admin/documents/${id}`, {
         headers: authHeaders(),

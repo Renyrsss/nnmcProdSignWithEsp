@@ -73,6 +73,22 @@
       "relation": "manyToOne",
       "target": "api::department.department",
       "inversedBy": "users"
+    },
+    "sessionVersion": {
+      "type": "integer",
+      "default": 1
+    },
+    "forcedLogoutAt": {
+      "type": "datetime"
+    },
+    "lastSeenAt": {
+      "type": "datetime"
+    },
+    "lastSeenIp": {
+      "type": "string"
+    },
+    "lastSeenUserAgent": {
+      "type": "text"
     }
   }
 }

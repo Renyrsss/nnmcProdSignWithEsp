@@ -1,0 +1,43 @@
+{
+  "kind": "collectionType",
+  "collectionName": "security_settings",
+  "info": {
+    "singularName": "security-setting",
+    "pluralName": "security-settings",
+    "displayName": "Security Setting",
+    "description": "Настройки безопасности приложения"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "passwordPolicy": {
+      "type": "json"
+    },
+    "ipRestrictionEnabled": {
+      "type": "boolean",
+      "default": false
+    },
+    "allowedIpRanges": {
+      "type": "json"
+    },
+    "sessionIdleMinutes": {
+      "type": "integer",
+      "default": 30
+    },
+    "twoFactorPlanned": {
+      "type": "boolean",
+      "default": false
+    },
+    "suspiciousActivityThreshold": {
+      "type": "integer",
+      "default": 5
+    },
+    "updatedByUser": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "plugin::users-permissions.user"
+    }
+  }
+}

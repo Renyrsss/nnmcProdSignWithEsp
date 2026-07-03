@@ -65,6 +65,11 @@ const toSafeUser = (user: any) => ({
     blocked: user.blocked,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
+    sessionVersion: user.sessionVersion || 1,
+    forcedLogoutAt: user.forcedLogoutAt || null,
+    lastSeenAt: user.lastSeenAt || null,
+    lastSeenIp: user.lastSeenIp || null,
+    lastSeenUserAgent: user.lastSeenUserAgent || null,
     role: toSafeRole(user.role),
     department: toSafeDepartment(user.department),
     isAdmin: isAppAdminRole(user.role),
@@ -258,6 +263,22 @@ const requireAppAdmin = async (ctx: any, strapi: any) => {
     const fullUser = await getAuthenticatedUser(strapi, user.id);
     if (!isAppAdminRole(fullUser?.role)) {
         ctx.forbidden("Требуется роль администратора");
+        return null;
+    }
+
+    const securitySettings = await getOrCreateSecuritySettings(strapi);
+    if (
+        securitySettings.ipRestrictionEnabled &&
+        !isIpAllowed(getRequestIp(ctx), securitySettings.allowedIpRanges)
+    ) {
+        await createAuditLog(strapi, ctx, "security_suspicious_action", {
+            actor: fullUser,
+            metadata: {
+                reason: "admin_ip_restricted",
+                ip: getRequestIp(ctx),
+            },
+        });
+        ctx.forbidden("Доступ администратора с этого IP запрещен");
         return null;
     }
 
@@ -1002,6 +1023,241 @@ const normalizePlatformSettingsPayload = (body: any) => {
             signatureModes,
             retentionPolicyEnabled: Boolean(body.retentionPolicyEnabled),
         },
+    };
+};
+
+const DEFAULT_SECURITY_SETTINGS = {
+    passwordPolicy: {
+        minLength: 8,
+        requireUppercase: false,
+        requireLowercase: false,
+        requireNumber: false,
+        requireSpecial: false,
+        rotateDays: null,
+    },
+    ipRestrictionEnabled: false,
+    allowedIpRanges: [],
+    sessionIdleMinutes: 30,
+    twoFactorPlanned: false,
+    suspiciousActivityThreshold: 5,
+};
+
+const normalizePasswordPolicy = (value: any) => {
+    const source = value && typeof value === "object" ? value : {};
+    const minLength = normalizeIntegerSetting(
+        source.minLength,
+        DEFAULT_SECURITY_SETTINGS.passwordPolicy.minLength,
+        6,
+        128,
+        false
+    );
+    const rotateDays = normalizeIntegerSetting(source.rotateDays, null, 1, 36500);
+
+    if (minLength === undefined) return undefined;
+    if (rotateDays === undefined) return undefined;
+
+    return {
+        minLength,
+        requireUppercase: Boolean(source.requireUppercase),
+        requireLowercase: Boolean(source.requireLowercase),
+        requireNumber: Boolean(source.requireNumber),
+        requireSpecial: Boolean(source.requireSpecial),
+        rotateDays,
+    };
+};
+
+const normalizeIpRanges = (value: any) => {
+    const rawItems = Array.isArray(value)
+        ? value
+        : String(value || "")
+              .split(/\n|,/)
+              .map((item) => item.trim());
+
+    return Array.from(
+        new Set(
+            rawItems
+                .map((item: any) => cleanString(item))
+                .filter(Boolean)
+                .filter((item: string) => /^[0-9a-fA-F:.\/]+$/.test(item))
+        )
+    ).slice(0, 200);
+};
+
+const toSafeSecuritySettings = (settings: any = {}) => ({
+    id: settings.id || null,
+    passwordPolicy: {
+        ...DEFAULT_SECURITY_SETTINGS.passwordPolicy,
+        ...(settings.passwordPolicy || {}),
+    },
+    ipRestrictionEnabled: toBoolean(
+        settings.ipRestrictionEnabled,
+        DEFAULT_SECURITY_SETTINGS.ipRestrictionEnabled
+    ),
+    allowedIpRanges: Array.isArray(settings.allowedIpRanges)
+        ? settings.allowedIpRanges
+        : DEFAULT_SECURITY_SETTINGS.allowedIpRanges,
+    sessionIdleMinutes:
+        settings.sessionIdleMinutes ||
+        DEFAULT_SECURITY_SETTINGS.sessionIdleMinutes,
+    twoFactorPlanned: toBoolean(
+        settings.twoFactorPlanned,
+        DEFAULT_SECURITY_SETTINGS.twoFactorPlanned
+    ),
+    suspiciousActivityThreshold:
+        settings.suspiciousActivityThreshold ||
+        DEFAULT_SECURITY_SETTINGS.suspiciousActivityThreshold,
+    updatedAt: settings.updatedAt || null,
+});
+
+const getOrCreateSecuritySettings = async (strapi: any) => {
+    const existing = await strapi.db
+        .query("api::security-setting.security-setting")
+        .findOne({ orderBy: { createdAt: "asc" } });
+
+    if (existing) return toSafeSecuritySettings(existing);
+
+    const created = await strapi.db
+        .query("api::security-setting.security-setting")
+        .create({ data: DEFAULT_SECURITY_SETTINGS });
+
+    return toSafeSecuritySettings(created);
+};
+
+const normalizeSecuritySettingsPayload = (body: any) => {
+    const passwordPolicy = normalizePasswordPolicy(body.passwordPolicy);
+    const sessionIdleMinutes = normalizeIntegerSetting(
+        body.sessionIdleMinutes,
+        DEFAULT_SECURITY_SETTINGS.sessionIdleMinutes,
+        5,
+        1440,
+        false
+    );
+    const suspiciousActivityThreshold = normalizeIntegerSetting(
+        body.suspiciousActivityThreshold,
+        DEFAULT_SECURITY_SETTINGS.suspiciousActivityThreshold,
+        1,
+        100,
+        false
+    );
+    const allowedIpRanges = normalizeIpRanges(body.allowedIpRanges);
+
+    if (!passwordPolicy) return { error: "Некорректная парольная политика" };
+    if (sessionIdleMinutes === undefined) {
+        return { error: "Некорректный таймаут сессии" };
+    }
+    if (suspiciousActivityThreshold === undefined) {
+        return { error: "Некорректный порог подозрительной активности" };
+    }
+    if (Boolean(body.ipRestrictionEnabled) && allowedIpRanges.length === 0) {
+        return { error: "Укажите хотя бы один разрешенный IP или диапазон" };
+    }
+
+    return {
+        data: {
+            passwordPolicy,
+            ipRestrictionEnabled: Boolean(body.ipRestrictionEnabled),
+            allowedIpRanges,
+            sessionIdleMinutes,
+            twoFactorPlanned: Boolean(body.twoFactorPlanned),
+            suspiciousActivityThreshold,
+        },
+    };
+};
+
+const validatePasswordAgainstPolicy = (password: string, settings: any) => {
+    const policy = toSafeSecuritySettings(settings).passwordPolicy;
+    if (password.length < policy.minLength) {
+        return `Пароль должен быть не короче ${policy.minLength} символов`;
+    }
+    if (policy.requireUppercase && !/[A-ZА-ЯЁ]/.test(password)) {
+        return "Пароль должен содержать заглавную букву";
+    }
+    if (policy.requireLowercase && !/[a-zа-яё]/.test(password)) {
+        return "Пароль должен содержать строчную букву";
+    }
+    if (policy.requireNumber && !/[0-9]/.test(password)) {
+        return "Пароль должен содержать цифру";
+    }
+    if (policy.requireSpecial && !/[^A-Za-zА-Яа-яЁё0-9]/.test(password)) {
+        return "Пароль должен содержать специальный символ";
+    }
+    return null;
+};
+
+const normalizeIpAddress = (value: any) =>
+    cleanString(value).replace(/^::ffff:/, "").replace(/^::1$/, "127.0.0.1");
+
+const ipv4ToNumber = (ip: string) => {
+    const parts = ip.split(".").map((part) => Number.parseInt(part, 10));
+    if (parts.length !== 4 || parts.some((part) => !Number.isFinite(part) || part < 0 || part > 255)) {
+        return null;
+    }
+    return parts.reduce((acc, part) => acc * 256 + part, 0) >>> 0;
+};
+
+const matchesIpv4Cidr = (ip: string, range: string) => {
+    const [baseIp, prefixText] = range.split("/");
+    const prefix = Number.parseInt(prefixText, 10);
+    const ipNumber = ipv4ToNumber(ip);
+    const baseNumber = ipv4ToNumber(baseIp);
+
+    if (ipNumber === null || baseNumber === null || !Number.isFinite(prefix)) {
+        return false;
+    }
+    if (prefix < 0 || prefix > 32) return false;
+    if (prefix === 0) return true;
+
+    const mask = (0xffffffff << (32 - prefix)) >>> 0;
+    return (ipNumber & mask) === (baseNumber & mask);
+};
+
+const isIpAllowed = (requestIp: string, ranges: any) => {
+    const ip = normalizeIpAddress(requestIp);
+    const allowed = Array.isArray(ranges) ? ranges.map(normalizeIpAddress) : [];
+    if (allowed.length === 0) return true;
+
+    return allowed.some((range) => {
+        if (range === "*" || range === ip) return true;
+        if (range.includes("/")) return matchesIpv4Cidr(ip, range);
+        return false;
+    });
+};
+
+const getClientSessionVersion = (ctx: any) => {
+    const raw =
+        ctx.request.headers["x-session-version"] ||
+        ctx.request.body?.sessionVersion ||
+        ctx.query?.sessionVersion;
+    const value = Array.isArray(raw) ? raw[0] : raw;
+    const parsed = Number.parseInt(String(value || ""), 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+};
+
+const isClientSessionCurrent = (ctx: any, user: any) => {
+    const clientVersion = getClientSessionVersion(ctx);
+    const serverVersion = Number(user?.sessionVersion || 1);
+    return !clientVersion || clientVersion >= serverVersion;
+};
+
+const toSafeSecuritySession = (user: any, settings: any) => {
+    const lastSeenMs = getDateTime(user.lastSeenAt);
+    const idleMinutes = settings.sessionIdleMinutes || 30;
+    const onlineSinceMs = Date.now() - idleMinutes * 60000;
+
+    return {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        fullName: user.fullName,
+        blocked: Boolean(user.blocked),
+        role: toSafeRole(user.role),
+        department: toSafeDepartment(user.department),
+        sessionVersion: user.sessionVersion || 1,
+        forcedLogoutAt: user.forcedLogoutAt || null,
+        lastSeenAt: user.lastSeenAt || null,
+        lastSeenIp: user.lastSeenIp || null,
+        lastSeenUserAgent: user.lastSeenUserAgent || null,
+        isOnline: Boolean(lastSeenMs && lastSeenMs >= onlineSinceMs),
     };
 };
 
@@ -1780,6 +2036,9 @@ export default factories.createCoreController(
 
             const fullUser = await getAuthenticatedUser(strapi, user.id);
             if (!fullUser) return ctx.notFound("Пользователь не найден");
+            if (!isClientSessionCurrent(ctx, fullUser)) {
+                return ctx.unauthorized("Сессия завершена администратором");
+            }
 
             return ctx.send({
                 data: {
@@ -1789,6 +2048,9 @@ export default factories.createCoreController(
                     fullName: fullUser.fullName,
                     confirmed: fullUser.confirmed,
                     blocked: fullUser.blocked,
+                    sessionVersion: fullUser.sessionVersion || 1,
+                    forcedLogoutAt: fullUser.forcedLogoutAt || null,
+                    lastSeenAt: fullUser.lastSeenAt || null,
                     role: fullUser.role
                         ? {
                               id: fullUser.role.id,
@@ -1803,6 +2065,38 @@ export default factories.createCoreController(
                           }
                         : null,
                     isAdmin: isAppAdminRole(fullUser.role),
+                },
+            });
+        },
+
+        /**
+         * POST /api/security/heartbeat
+         */
+        async recordSecurityHeartbeat(ctx) {
+            const user = ctx.state.user;
+            if (!user) return ctx.unauthorized("Необходима авторизация");
+
+            const fullUser = await getAuthenticatedUser(strapi, user.id);
+            if (!fullUser) return ctx.notFound("Пользователь не найден");
+            if (!isClientSessionCurrent(ctx, fullUser)) {
+                return ctx.unauthorized("Сессия завершена администратором");
+            }
+
+            const now = new Date().toISOString();
+            await strapi.db.query("plugin::users-permissions.user").update({
+                where: { id: fullUser.id },
+                data: {
+                    lastSeenAt: now,
+                    lastSeenIp: getRequestIp(ctx),
+                    lastSeenUserAgent: String(ctx.request.headers["user-agent"] || ""),
+                },
+            });
+
+            return ctx.send({
+                data: {
+                    id: fullUser.id,
+                    sessionVersion: fullUser.sessionVersion || 1,
+                    lastSeenAt: now,
                 },
             });
         },
@@ -2196,6 +2490,158 @@ export default factories.createCoreController(
                 `attachment; filename="document-${identifier}-archive-${exportedAt}.json"`
             );
             return ctx.send(JSON.stringify(payload, null, 2));
+        },
+
+        /**
+         * GET /api/admin/security
+         */
+        async getAdminSecurity(ctx) {
+            const admin = await requireAppAdmin(ctx, strapi);
+            if (!admin) return;
+
+            const settings = await getOrCreateSecuritySettings(strapi);
+            const users = await strapi.db
+                .query("plugin::users-permissions.user")
+                .findMany({
+                    populate: ["role", "department"],
+                    orderBy: [
+                        { lastSeenAt: "desc" },
+                        { updatedAt: "desc" },
+                    ],
+                    limit: 1000,
+                });
+            const suspiciousLogs = await strapi.db
+                .query("api::audit-log.audit-log")
+                .findMany({
+                    where: { event: "security_suspicious_action" },
+                    populate: ["actor", "targetUser"],
+                    orderBy: [{ createdAt: "desc" }],
+                    limit: 30,
+                });
+
+            return ctx.send({
+                data: {
+                    settings,
+                    sessions: users.map((user: any) =>
+                        toSafeSecuritySession(user, settings)
+                    ),
+                    suspiciousLogs: suspiciousLogs.map((log: any) => ({
+                        id: log.id,
+                        event: log.event,
+                        actorName: log.actorName,
+                        targetUserName: log.targetUserName,
+                        ip: log.ip,
+                        userAgent: log.userAgent,
+                        metadata: log.metadata || {},
+                        createdAt: log.createdAt,
+                    })),
+                },
+            });
+        },
+
+        /**
+         * PUT /api/admin/security/settings
+         */
+        async updateAdminSecuritySettings(ctx) {
+            const admin = await requireAppAdmin(ctx, strapi);
+            if (!admin) return;
+
+            const normalized = normalizeSecuritySettingsPayload(ctx.request.body || {});
+            if (normalized.error) return ctx.badRequest(normalized.error);
+
+            if (
+                normalized.data.ipRestrictionEnabled &&
+                !isIpAllowed(getRequestIp(ctx), normalized.data.allowedIpRanges)
+            ) {
+                return ctx.badRequest(
+                    "Текущий IP администратора должен быть в списке разрешенных"
+                );
+            }
+
+            const existing = await strapi.db
+                .query("api::security-setting.security-setting")
+                .findOne({ orderBy: { createdAt: "asc" } });
+            const saved = existing
+                ? await strapi.db
+                      .query("api::security-setting.security-setting")
+                      .update({
+                          where: { id: existing.id },
+                          data: {
+                              ...normalized.data,
+                              updatedByUser: admin.id,
+                          },
+                      })
+                : await strapi.db
+                      .query("api::security-setting.security-setting")
+                      .create({
+                          data: {
+                              ...normalized.data,
+                              updatedByUser: admin.id,
+                          },
+                      });
+
+            await createAuditLog(strapi, ctx, "security_settings_updated", {
+                actor: admin,
+                metadata: {
+                    ipRestrictionEnabled: normalized.data.ipRestrictionEnabled,
+                    allowedIpRangesCount: normalized.data.allowedIpRanges.length,
+                    sessionIdleMinutes: normalized.data.sessionIdleMinutes,
+                    passwordPolicy: normalized.data.passwordPolicy,
+                    twoFactorPlanned: normalized.data.twoFactorPlanned,
+                },
+            });
+
+            return ctx.send({ data: toSafeSecuritySettings(saved) });
+        },
+
+        /**
+         * POST /api/admin/security/users/:id/force-logout
+         */
+        async forceLogoutAdminUser(ctx) {
+            const admin = await requireAppAdmin(ctx, strapi);
+            if (!admin) return;
+
+            const { id } = ctx.params;
+            const reason = cleanString(ctx.request.body?.reason);
+            const targetUser = await strapi.db
+                .query("plugin::users-permissions.user")
+                .findOne({ where: { id }, populate: ["role", "department"] });
+
+            if (!targetUser) return ctx.notFound("Пользователь не найден");
+            if (Number(targetUser.id) === Number(admin.id)) {
+                return ctx.badRequest("Нельзя завершить собственную сессию этим действием");
+            }
+
+            const nextVersion = Number(targetUser.sessionVersion || 1) + 1;
+            const forcedLogoutAt = new Date().toISOString();
+            const updated = await strapi.db
+                .query("plugin::users-permissions.user")
+                .update({
+                    where: { id: targetUser.id },
+                    data: {
+                        sessionVersion: nextVersion,
+                        forcedLogoutAt,
+                    },
+                    populate: ["role", "department"],
+                });
+
+            await createAuditLog(strapi, ctx, "user_forced_logout", {
+                actor: admin,
+                targetUser,
+                metadata: {
+                    reason,
+                    previousSessionVersion: targetUser.sessionVersion || 1,
+                    nextSessionVersion: nextVersion,
+                    forcedLogoutAt,
+                },
+            });
+
+            return ctx.send({
+                data: toSafeSecuritySession(
+                    updated,
+                    await getOrCreateSecuritySettings(strapi)
+                ),
+            });
         },
 
         /**
@@ -3010,9 +3456,12 @@ export default factories.createCoreController(
             if (!isEmail(email)) {
                 return ctx.badRequest("Укажите корректный email");
             }
-            if (password.length < 8) {
-                return ctx.badRequest("Пароль должен быть не короче 8 символов");
-            }
+            const securitySettings = await getOrCreateSecuritySettings(strapi);
+            const passwordError = validatePasswordAgainstPolicy(
+                password,
+                securitySettings
+            );
+            if (passwordError) return ctx.badRequest(passwordError);
 
             const [sameUsername, sameEmail, role, department] = await Promise.all([
                 strapi.db
@@ -3149,9 +3598,12 @@ export default factories.createCoreController(
             const { id } = ctx.params;
             const password = String(ctx.request.body?.password || "");
 
-            if (password.length < 8) {
-                return ctx.badRequest("Пароль должен быть не короче 8 символов");
-            }
+            const securitySettings = await getOrCreateSecuritySettings(strapi);
+            const passwordError = validatePasswordAgainstPolicy(
+                password,
+                securitySettings
+            );
+            if (passwordError) return ctx.badRequest(passwordError);
 
             const targetUser = await strapi.db
                 .query("plugin::users-permissions.user")
@@ -3162,7 +3614,11 @@ export default factories.createCoreController(
             await strapi
                 .plugin("users-permissions")
                 .service("user")
-                .edit(targetUser.id, { password });
+                .edit(targetUser.id, {
+                    password,
+                    sessionVersion: Number(targetUser.sessionVersion || 1) + 1,
+                    forcedLogoutAt: new Date().toISOString(),
+                });
 
             strapi.log.info(
                 `[app-admin] user=${admin.id} changed password for user=${targetUser.id}`

@@ -35,6 +35,9 @@
         "document_archived",
         "document_restored",
         "document_archive_exported",
+        "security_settings_updated",
+        "user_forced_logout",
+        "security_suspicious_action",
         "document_deleted"
       ],
       "required": true
