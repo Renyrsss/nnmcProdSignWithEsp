@@ -385,11 +385,12 @@ const normalizeQueryValue = (value: any) => {
     return value;
 };
 
-const buildAdminDocumentFilters = (query: any) => {
+const buildAdminDocumentFilters = (query: any, options: { includeStatus?: boolean } = {}) => {
+    const includeStatus = options.includeStatus !== false;
     const andFilters: any[] = [];
 
     const status = normalizeQueryValue(query.status);
-    if (status && status !== "all") {
+    if (includeStatus && status && status !== "all") {
         andFilters.push({ status });
     }
 
@@ -466,6 +467,32 @@ const toPositiveInt = (value: any, fallback: number, max: number) => {
 
 const ACTIVE_DOCUMENT_STATUSES = new Set(["pending", "in_progress", "revision"]);
 const ARCHIVABLE_DOCUMENT_STATUSES = new Set(["completed", "cancelled"]);
+const ADMIN_DOCUMENT_STATUS_KEYS = [
+    "pending",
+    "in_progress",
+    "completed",
+    "cancelled",
+    "revision",
+];
+
+const appendAdminDocumentStatusFilter = (baseFilters: any, status: string) => {
+    const filters = baseFilters?.$and?.length ? [...baseFilters.$and] : [];
+    filters.push({ status });
+    return { $and: filters };
+};
+
+const countAdminDocumentsByStatus = async (strapi: any, baseFilters: any) => {
+    const pairs = await Promise.all(
+        ADMIN_DOCUMENT_STATUS_KEYS.map(async (status) => [
+            status,
+            await strapi.documents("api::document.document").count({
+                filters: appendAdminDocumentStatusFilter(baseFilters, status),
+            } as any),
+        ])
+    );
+
+    return Object.fromEntries(pairs);
+};
 
 const addDaysIso = (date: Date, days: number | null | undefined) => {
     if (!days) return null;
@@ -2576,8 +2603,11 @@ export default factories.createCoreController(
             const page = toPositiveInt(ctx.query.page, 1, 100000);
             const pageSize = toPositiveInt(ctx.query.pageSize, 50, 200);
             const filters = buildAdminDocumentFilters(ctx.query);
+            const statusCountFilters = buildAdminDocumentFilters(ctx.query, {
+                includeStatus: false,
+            });
 
-            const [documents, total] = await Promise.all([
+            const [documents, total, statusCounts] = await Promise.all([
                 strapi.documents("api::document.document").findMany({
                     filters,
                     populate: getDocumentPopulate(),
@@ -2588,6 +2618,7 @@ export default factories.createCoreController(
                 strapi.documents("api::document.document").count({
                     filters,
                 } as any),
+                countAdminDocumentsByStatus(strapi, statusCountFilters),
             ]);
 
             const sanitized = await this.sanitizeOutput(documents, ctx);
@@ -2599,6 +2630,7 @@ export default factories.createCoreController(
                     page,
                     pageSize,
                     pageCount: Math.ceil(total / pageSize),
+                    statusCounts,
                 },
             });
         },

@@ -101,6 +101,7 @@ export default function AdminDocumentsPage() {
             {}
         );
     }, [documents]);
+    const statusStats = meta.statusCounts || pageStats;
 
     const loadDictionaries = useCallback(async () => {
         try {
@@ -319,7 +320,7 @@ export default function AdminDocumentsPage() {
                         <div key={status} className='border border-gray-200 rounded-lg p-3'>
                             <p className='text-xs text-gray-500'>{label}</p>
                             <p className='text-xl font-semibold text-gray-900'>
-                                {pageStats[status] || 0}
+                                {statusStats[status] || 0}
                             </p>
                         </div>
                     ))}
