@@ -391,6 +391,60 @@ const toPositiveInt = (value: any, fallback: number, max: number) => {
     return Math.min(parsed, max);
 };
 
+const ACTIVE_DOCUMENT_STATUSES = new Set(["pending", "in_progress", "revision"]);
+
+const appendAdminAction = (
+    document: any,
+    admin: any,
+    type: string,
+    details: Record<string, any> = {}
+) => [
+    ...(Array.isArray(document.adminActionHistory)
+        ? document.adminActionHistory
+        : []),
+    {
+        type,
+        date: new Date().toISOString(),
+        adminId: admin.id,
+        adminName: admin.fullName || admin.username,
+        ...details,
+    },
+];
+
+const normalizeDateOrNull = (value: any) => {
+    if (value === undefined || value === null || value === "") return null;
+    const date = new Date(String(value));
+    if (Number.isNaN(date.getTime())) return undefined;
+    return date.toISOString();
+};
+
+const getDocumentByNumericOrDocumentId = async (
+    strapi: any,
+    id: string | number,
+    populate: any = []
+) => {
+    const numericId = Number(id);
+    if (Number.isFinite(numericId)) {
+        const document = await strapi.db
+            .query("api::document.document")
+            .findOne({ where: { id: numericId }, populate });
+        if (document) return document;
+    }
+
+    return strapi.db
+        .query("api::document.document")
+        .findOne({ where: { documentId: String(id) }, populate });
+};
+
+const getAssignedUserIdsFromSigners = (signers: any[]) =>
+    Array.from(
+        new Set(
+            (Array.isArray(signers) ? signers : [])
+                .map((signer) => Number(signer?.userId))
+                .filter((userId) => Number.isFinite(userId) && userId > 0)
+        )
+    );
+
 const findDocumentForAccess = async (strapi: any, id: string | number) => {
     try {
         const document = await strapi
@@ -703,6 +757,283 @@ export default factories.createCoreController(
             if (!documents?.length) return ctx.notFound("Документ не найден");
 
             const sanitized = await this.sanitizeOutput(documents[0], ctx);
+            return ctx.send({ data: sanitized });
+        },
+
+        /**
+         * POST /api/admin/documents/:id/cancel
+         */
+        async cancelAdminDocument(ctx) {
+            const admin = await requireAppAdmin(ctx, strapi);
+            if (!admin) return;
+
+            const { id } = ctx.params;
+            const reason = cleanString(ctx.request.body?.reason);
+            if (reason.length < 3) {
+                return ctx.badRequest("Укажите причину отмены документа");
+            }
+
+            const document = await getDocumentByNumericOrDocumentId(strapi, id, [
+                "creator",
+                "assigned_users",
+            ]);
+            if (!document) return ctx.notFound("Документ не найден");
+            if (!ACTIVE_DOCUMENT_STATUSES.has(document.status)) {
+                return ctx.badRequest("Этот документ уже нельзя отменить");
+            }
+
+            await strapi.db.query("api::document.document").update({
+                where: { id: document.id },
+                data: {
+                    status: "cancelled",
+                    cancellationReason: reason,
+                    adminActionHistory: appendAdminAction(
+                        document,
+                        admin,
+                        "cancel",
+                        { reason }
+                    ),
+                },
+            });
+
+            strapi.log.info(
+                `[app-admin] user=${admin.id} cancelled document=${document.id}`
+            );
+
+            const updated = await strapi.db
+                .query("api::document.document")
+                .findOne({
+                    where: { id: document.id },
+                    populate: getDocumentPopulate(),
+                });
+            const sanitized = await this.sanitizeOutput(updated, ctx);
+            return ctx.send({ data: sanitized });
+        },
+
+        /**
+         * POST /api/admin/documents/:id/reassign-signer
+         */
+        async reassignAdminDocumentSigner(ctx) {
+            const admin = await requireAppAdmin(ctx, strapi);
+            if (!admin) return;
+
+            const { id } = ctx.params;
+            const fromUserId = Number(ctx.request.body?.fromUserId);
+            const toUserId = Number(ctx.request.body?.toUserId);
+            const reason = cleanString(ctx.request.body?.reason);
+
+            if (!Number.isFinite(fromUserId) || !Number.isFinite(toUserId)) {
+                return ctx.badRequest("Укажите текущего и нового подписанта");
+            }
+            if (fromUserId === toUserId) {
+                return ctx.badRequest("Новый подписант совпадает с текущим");
+            }
+            if (reason.length < 3) {
+                return ctx.badRequest("Укажите причину переназначения");
+            }
+
+            const [document, newUser] = await Promise.all([
+                getDocumentByNumericOrDocumentId(strapi, id, [
+                    "assigned_users",
+                    "creator",
+                ]),
+                strapi.db.query("plugin::users-permissions.user").findOne({
+                    where: { id: toUserId },
+                    populate: ["department"],
+                }),
+            ]);
+
+            if (!document) return ctx.notFound("Документ не найден");
+            if (!newUser) return ctx.notFound("Новый подписант не найден");
+            if (!ACTIVE_DOCUMENT_STATUSES.has(document.status)) {
+                return ctx.badRequest("В этом статусе нельзя переназначить подписанта");
+            }
+
+            const signers = Array.isArray(document.signers)
+                ? [...document.signers]
+                : [];
+            const signerIndex = signers.findIndex(
+                (signer) => Number(signer?.userId) === fromUserId
+            );
+            if (signerIndex === -1) {
+                return ctx.badRequest("Текущий подписант не найден в маршруте");
+            }
+            if (signers[signerIndex]?.status === "signed") {
+                return ctx.badRequest("Нельзя переназначить уже подписавшего пользователя");
+            }
+            const duplicateSigner = signers.some(
+                (signer, index) =>
+                    index !== signerIndex && Number(signer?.userId) === toUserId
+            );
+            if (duplicateSigner) {
+                return ctx.badRequest("Новый подписант уже есть в маршруте документа");
+            }
+
+            const previousSigner = signers[signerIndex];
+            const updatedSigners = signers.map((signer, index) =>
+                index === signerIndex
+                    ? {
+                          ...signer,
+                          userId: newUser.id,
+                          userName: newUser.fullName || newUser.username,
+                          userEmail: newUser.email,
+                          departmentId: newUser.department?.id || null,
+                          departmentName: newUser.department?.name || null,
+                          status: signer.status || "pending",
+                          reassignedFromUserId: previousSigner.userId,
+                          reassignedFromUserName: previousSigner.userName,
+                          reassignedAt: new Date().toISOString(),
+                          reassignedByAdminId: admin.id,
+                      }
+                    : signer
+            );
+
+            const assignedUserIds = getAssignedUserIdsFromSigners(updatedSigners);
+            await strapi.db.query("api::document.document").update({
+                where: { id: document.id },
+                data: {
+                    signers: updatedSigners,
+                    assigned_users: assignedUserIds,
+                    adminActionHistory: appendAdminAction(
+                        document,
+                        admin,
+                        "reassign_signer",
+                        {
+                            reason,
+                            fromUserId,
+                            fromUserName: previousSigner.userName,
+                            toUserId: newUser.id,
+                            toUserName: newUser.fullName || newUser.username,
+                        }
+                    ),
+                },
+            });
+
+            strapi.log.info(
+                `[app-admin] user=${admin.id} reassigned signer document=${document.id} from=${fromUserId} to=${toUserId}`
+            );
+
+            const updated = await strapi.db
+                .query("api::document.document")
+                .findOne({
+                    where: { id: document.id },
+                    populate: getDocumentPopulate(),
+                });
+            const sanitized = await this.sanitizeOutput(updated, ctx);
+            return ctx.send({ data: sanitized });
+        },
+
+        /**
+         * PUT /api/admin/documents/:id/deadline
+         */
+        async updateAdminDocumentDeadline(ctx) {
+            const admin = await requireAppAdmin(ctx, strapi);
+            if (!admin) return;
+
+            const { id } = ctx.params;
+            const signingDeadlineAt = normalizeDateOrNull(
+                ctx.request.body?.signingDeadlineAt
+            );
+            const reason = cleanString(ctx.request.body?.reason);
+
+            if (signingDeadlineAt === undefined) {
+                return ctx.badRequest("Некорректная дата срока подписания");
+            }
+
+            const document = await getDocumentByNumericOrDocumentId(strapi, id);
+            if (!document) return ctx.notFound("Документ не найден");
+            if (!ACTIVE_DOCUMENT_STATUSES.has(document.status)) {
+                return ctx.badRequest("В этом статусе нельзя менять срок подписания");
+            }
+
+            await strapi.db.query("api::document.document").update({
+                where: { id: document.id },
+                data: {
+                    signingDeadlineAt,
+                    adminActionHistory: appendAdminAction(
+                        document,
+                        admin,
+                        "update_deadline",
+                        {
+                            reason,
+                            previousDeadlineAt: document.signingDeadlineAt || null,
+                            signingDeadlineAt,
+                        }
+                    ),
+                },
+            });
+
+            strapi.log.info(
+                `[app-admin] user=${admin.id} updated deadline document=${document.id}`
+            );
+
+            const updated = await strapi.db
+                .query("api::document.document")
+                .findOne({
+                    where: { id: document.id },
+                    populate: getDocumentPopulate(),
+                });
+            const sanitized = await this.sanitizeOutput(updated, ctx);
+            return ctx.send({ data: sanitized });
+        },
+
+        /**
+         * POST /api/admin/documents/:id/reminder
+         */
+        async requestAdminDocumentReminder(ctx) {
+            const admin = await requireAppAdmin(ctx, strapi);
+            if (!admin) return;
+
+            const { id } = ctx.params;
+            const signerId = normalizeOptionalId(ctx.request.body?.signerId);
+            const reason = cleanString(ctx.request.body?.reason);
+
+            const document = await getDocumentByNumericOrDocumentId(strapi, id);
+            if (!document) return ctx.notFound("Документ не найден");
+            if (!ACTIVE_DOCUMENT_STATUSES.has(document.status)) {
+                return ctx.badRequest("В этом статусе нельзя отправить напоминание");
+            }
+
+            const signers = Array.isArray(document.signers)
+                ? document.signers
+                : [];
+            const signer = signerId
+                ? signers.find((item: any) => Number(item?.userId) === signerId)
+                : null;
+            if (signerId && !signer) {
+                return ctx.badRequest("Подписант не найден в маршруте");
+            }
+            if (signer && signer.status === "signed") {
+                return ctx.badRequest("Пользователь уже подписал документ");
+            }
+
+            await strapi.db.query("api::document.document").update({
+                where: { id: document.id },
+                data: {
+                    adminActionHistory: appendAdminAction(
+                        document,
+                        admin,
+                        "reminder_requested",
+                        {
+                            reason,
+                            signerId: signer?.userId || null,
+                            signerName: signer?.userName || null,
+                        }
+                    ),
+                },
+            });
+
+            strapi.log.info(
+                `[app-admin] user=${admin.id} requested reminder document=${document.id}`
+            );
+
+            const updated = await strapi.db
+                .query("api::document.document")
+                .findOne({
+                    where: { id: document.id },
+                    populate: getDocumentPopulate(),
+                });
+            const sanitized = await this.sanitizeOutput(updated, ctx);
             return ctx.send({ data: sanitized });
         },
 

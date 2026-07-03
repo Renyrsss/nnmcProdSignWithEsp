@@ -1,6 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
+    Ban,
+    Bell,
+    CalendarClock,
     ChevronLeft,
     ChevronRight,
     Eye,
@@ -8,9 +11,17 @@ import {
     Filter,
     Search,
     Shield,
+    UserRoundCheck,
     X,
 } from "lucide-react";
-import { getAdminDocuments, getAdminUsers } from "../api/admin";
+import {
+    cancelAdminDocument,
+    getAdminDocuments,
+    getAdminUsers,
+    reassignAdminDocumentSigner,
+    requestAdminDocumentReminder,
+    updateAdminDocumentDeadline,
+} from "../api/admin";
 import { getDocumentTypes } from "../api/documentTypes";
 import { getSubdivisions } from "../api/subdivisions";
 import { useToast } from "./Toast";
@@ -43,6 +54,12 @@ const getSignerProgress = (doc) => {
     return `${signed} / ${signers.length}`;
 };
 
+const isProcessActive = (doc) =>
+    ["pending", "in_progress", "revision"].includes(doc?.status);
+
+const getPendingSigners = (doc) =>
+    (doc?.signers || []).filter((signer) => signer.status !== "signed");
+
 export default function AdminDocumentsPage() {
     const [documents, setDocuments] = useState([]);
     const [meta, setMeta] = useState({ total: 0, page: 1, pageSize: PAGE_SIZE, pageCount: 1 });
@@ -63,6 +80,15 @@ export default function AdminDocumentsPage() {
     const [departments, setDepartments] = useState([]);
     const [documentTypes, setDocumentTypes] = useState([]);
     const [subdivisions, setSubdivisions] = useState([]);
+    const [actionModal, setActionModal] = useState(null);
+    const [actionSaving, setActionSaving] = useState(false);
+    const [actionForm, setActionForm] = useState({
+        reason: "",
+        fromUserId: "",
+        toUserId: "",
+        signerId: "",
+        signingDeadlineAt: "",
+    });
     const toast = useToast();
     const navigate = useNavigate();
 
@@ -167,6 +193,103 @@ export default function AdminDocumentsPage() {
         });
         setSubdivisions([]);
     };
+
+    const openActionModal = (type, doc) => {
+        const pendingSigners = getPendingSigners(doc);
+        setActionModal({ type, doc });
+        setActionForm({
+            reason: "",
+            fromUserId: pendingSigners[0]?.userId
+                ? String(pendingSigners[0].userId)
+                : "",
+            toUserId: "",
+            signerId: pendingSigners[0]?.userId
+                ? String(pendingSigners[0].userId)
+                : "",
+            signingDeadlineAt: doc.signingDeadlineAt
+                ? doc.signingDeadlineAt.slice(0, 16)
+                : "",
+        });
+    };
+
+    const closeActionModal = () => {
+        setActionModal(null);
+        setActionForm({
+            reason: "",
+            fromUserId: "",
+            toUserId: "",
+            signerId: "",
+            signingDeadlineAt: "",
+        });
+    };
+
+    const updateActionForm = (key, value) => {
+        setActionForm((prev) => ({ ...prev, [key]: value }));
+    };
+
+    const submitAction = async () => {
+        if (!actionModal?.doc) return;
+
+        const documentId = actionModal.doc.id;
+        setActionSaving(true);
+        try {
+            if (actionModal.type === "cancel") {
+                await cancelAdminDocument(documentId, actionForm.reason);
+                toast.success("Документ отменен");
+            }
+
+            if (actionModal.type === "reassign") {
+                await reassignAdminDocumentSigner(documentId, {
+                    fromUserId: actionForm.fromUserId,
+                    toUserId: actionForm.toUserId,
+                    reason: actionForm.reason,
+                });
+                toast.success("Подписант переназначен");
+            }
+
+            if (actionModal.type === "deadline") {
+                await updateAdminDocumentDeadline(documentId, {
+                    signingDeadlineAt: actionForm.signingDeadlineAt || null,
+                    reason: actionForm.reason,
+                });
+                toast.success("Срок подписания обновлен");
+            }
+
+            if (actionModal.type === "reminder") {
+                await requestAdminDocumentReminder(documentId, {
+                    signerId: actionForm.signerId || null,
+                    reason: actionForm.reason,
+                });
+                toast.success("Напоминание зафиксировано");
+            }
+
+            closeActionModal();
+            await loadDocuments();
+        } catch (error) {
+            console.error("Ошибка выполнения действия:", error);
+            toast.error(
+                error?.response?.data?.error?.message ||
+                    error?.message ||
+                    "Ошибка выполнения действия"
+            );
+        } finally {
+            setActionSaving(false);
+        }
+    };
+
+    const actionTitle = {
+        cancel: "Отменить документ",
+        reassign: "Переназначить подписанта",
+        deadline: "Изменить срок подписания",
+        reminder: "Повторное напоминание",
+    }[actionModal?.type];
+
+    const actionConfirmText = {
+        cancel: "Отменить",
+        reassign: "Переназначить",
+        deadline: "Сохранить срок",
+        reminder: "Зафиксировать",
+    }[actionModal?.type];
 
     return (
         <div className='max-w-7xl mx-auto px-4 py-8'>
@@ -428,14 +551,49 @@ export default function AdminDocumentsPage() {
                                         </td>
                                         <td className='px-4 py-4 text-sm text-gray-700 whitespace-nowrap'>
                                             {formatDate(doc.createdAt)}
+                                            {doc.signingDeadlineAt && (
+                                                <p className='mt-1 text-xs text-gray-500'>
+                                                    Срок: {formatDate(doc.signingDeadlineAt)}
+                                                </p>
+                                            )}
                                         </td>
                                         <td className='px-4 py-4 text-right'>
-                                            <button
-                                                onClick={() => navigate(`/documents/${doc.id}`)}
-                                                className='inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg'>
-                                                <Eye className='w-4 h-4' />
-                                                Открыть
-                                            </button>
+                                            <div className='flex flex-wrap justify-end gap-2'>
+                                                <button
+                                                    onClick={() => navigate(`/documents/${doc.id}`)}
+                                                    className='inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg'>
+                                                    <Eye className='w-4 h-4' />
+                                                    Открыть
+                                                </button>
+                                                <button
+                                                    disabled={!isProcessActive(doc)}
+                                                    onClick={() => openActionModal("deadline", doc)}
+                                                    className='inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg disabled:opacity-50'>
+                                                    <CalendarClock className='w-4 h-4' />
+                                                    Срок
+                                                </button>
+                                                <button
+                                                    disabled={!isProcessActive(doc) || getPendingSigners(doc).length === 0}
+                                                    onClick={() => openActionModal("reassign", doc)}
+                                                    className='inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg disabled:opacity-50'>
+                                                    <UserRoundCheck className='w-4 h-4' />
+                                                    Назначить
+                                                </button>
+                                                <button
+                                                    disabled={!isProcessActive(doc) || getPendingSigners(doc).length === 0}
+                                                    onClick={() => openActionModal("reminder", doc)}
+                                                    className='inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg disabled:opacity-50'>
+                                                    <Bell className='w-4 h-4' />
+                                                    Напомнить
+                                                </button>
+                                                <button
+                                                    disabled={!isProcessActive(doc)}
+                                                    onClick={() => openActionModal("cancel", doc)}
+                                                    className='inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-red-700 bg-red-50 hover:bg-red-100 rounded-lg disabled:opacity-50'>
+                                                    <Ban className='w-4 h-4' />
+                                                    Отменить
+                                                </button>
+                                            </div>
                                         </td>
                                     </tr>
                                 ))}
@@ -466,6 +624,145 @@ export default function AdminDocumentsPage() {
                     </div>
                 </div>
             </div>
+
+            {actionModal && (
+                <div className='fixed inset-0 z-50 flex items-center justify-center p-4'>
+                    <div
+                        className='absolute inset-0 bg-black/40 backdrop-blur-sm'
+                        onClick={closeActionModal}
+                    />
+                    <div className='relative bg-white rounded-xl shadow-2xl w-full max-w-xl'>
+                        <div className='flex items-center justify-between p-6 border-b border-gray-100'>
+                            <div>
+                                <h3 className='text-xl font-semibold text-gray-800'>
+                                    {actionTitle}
+                                </h3>
+                                <p className='mt-1 text-sm text-gray-500'>
+                                    {actionModal.doc.title}
+                                </p>
+                            </div>
+                            <button
+                                onClick={closeActionModal}
+                                className='p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100'>
+                                <X className='w-5 h-5' />
+                            </button>
+                        </div>
+
+                        <div className='p-6 space-y-4'>
+                            {actionModal.type === "reassign" && (
+                                <div className='grid grid-cols-1 md:grid-cols-2 gap-4'>
+                                    <div>
+                                        <label className='block text-sm font-medium text-gray-700 mb-1'>
+                                            Текущий подписант
+                                        </label>
+                                        <select
+                                            value={actionForm.fromUserId}
+                                            onChange={(event) =>
+                                                updateActionForm("fromUserId", event.target.value)
+                                            }
+                                            className='w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent'>
+                                            {getPendingSigners(actionModal.doc).map((signer) => (
+                                                <option key={signer.userId} value={signer.userId}>
+                                                    {signer.userName || signer.userEmail}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    <div>
+                                        <label className='block text-sm font-medium text-gray-700 mb-1'>
+                                            Новый подписант
+                                        </label>
+                                        <select
+                                            value={actionForm.toUserId}
+                                            onChange={(event) =>
+                                                updateActionForm("toUserId", event.target.value)
+                                            }
+                                            className='w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent'>
+                                            <option value=''>Выберите пользователя</option>
+                                            {users.map((user) => (
+                                                <option key={user.id} value={user.id}>
+                                                    {user.fullName || user.username}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                </div>
+                            )}
+
+                            {actionModal.type === "deadline" && (
+                                <div>
+                                    <label className='block text-sm font-medium text-gray-700 mb-1'>
+                                        Срок подписания
+                                    </label>
+                                    <input
+                                        type='datetime-local'
+                                        value={actionForm.signingDeadlineAt}
+                                        onChange={(event) =>
+                                            updateActionForm("signingDeadlineAt", event.target.value)
+                                        }
+                                        className='w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent'
+                                    />
+                                </div>
+                            )}
+
+                            {actionModal.type === "reminder" && (
+                                <div>
+                                    <label className='block text-sm font-medium text-gray-700 mb-1'>
+                                        Подписант
+                                    </label>
+                                    <select
+                                        value={actionForm.signerId}
+                                        onChange={(event) =>
+                                            updateActionForm("signerId", event.target.value)
+                                        }
+                                        className='w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent'>
+                                        <option value=''>Все ожидающие подписанты</option>
+                                        {getPendingSigners(actionModal.doc).map((signer) => (
+                                            <option key={signer.userId} value={signer.userId}>
+                                                {signer.userName || signer.userEmail}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
+
+                            <div>
+                                <label className='block text-sm font-medium text-gray-700 mb-1'>
+                                    Причина
+                                </label>
+                                <textarea
+                                    value={actionForm.reason}
+                                    onChange={(event) =>
+                                        updateActionForm("reason", event.target.value)
+                                    }
+                                    rows={3}
+                                    className='w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent'
+                                />
+                            </div>
+                        </div>
+
+                        <div className='flex gap-3 p-6 pt-2 border-t border-gray-100'>
+                            <button
+                                onClick={closeActionModal}
+                                disabled={actionSaving}
+                                className='flex-1 py-2.5 px-4 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-lg disabled:opacity-50'>
+                                Отмена
+                            </button>
+                            <button
+                                onClick={submitAction}
+                                disabled={actionSaving}
+                                className={`flex-1 py-2.5 px-4 text-white font-medium rounded-lg disabled:opacity-50 ${
+                                    actionModal.type === "cancel"
+                                        ? "bg-red-600 hover:bg-red-700"
+                                        : "bg-indigo-600 hover:bg-indigo-700"
+                                }`}>
+                                {actionSaving ? "Сохранение..." : actionConfirmText}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

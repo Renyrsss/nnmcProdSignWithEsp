@@ -61,6 +61,15 @@
     "signatureHistory": {
       "type": "json"
     },
+    "signingDeadlineAt": {
+      "type": "datetime"
+    },
+    "cancellationReason": {
+      "type": "text"
+    },
+    "adminActionHistory": {
+      "type": "json"
+    },
     "documentType": {
       "type": "relation",
       "relation": "manyToOne",

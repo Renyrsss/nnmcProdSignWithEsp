@@ -529,10 +529,12 @@ export interface ApiDocumentDocument extends Struct.CollectionTypeSchema {
     draftAndPublish: false;
   };
   attributes: {
+    adminActionHistory: Schema.Attribute.JSON;
     assigned_users: Schema.Attribute.Relation<
       'manyToMany',
       'plugin::users-permissions.user'
     >;
+    cancellationReason: Schema.Attribute.Text;
     createdAt: Schema.Attribute.DateTime;
     createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
       Schema.Attribute.Private;
@@ -558,6 +560,7 @@ export interface ApiDocumentDocument extends Struct.CollectionTypeSchema {
       Schema.Attribute.DefaultTo<false>;
     signatureType: Schema.Attribute.Enumeration<['eds', 'simple']>;
     signers: Schema.Attribute.JSON;
+    signingDeadlineAt: Schema.Attribute.DateTime;
     status: Schema.Attribute.Enumeration<
       ['pending', 'in_progress', 'completed', 'cancelled', 'revision']
     > &

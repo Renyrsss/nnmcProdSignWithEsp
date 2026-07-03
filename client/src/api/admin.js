@@ -33,6 +33,42 @@ export const getAdminDocument = async (id) => {
     return response.data.data;
 };
 
+export const cancelAdminDocument = async (documentId, reason) => {
+    const response = await axios.post(
+        `${API_URL}/admin/documents/${documentId}/cancel`,
+        { reason },
+        { headers: authHeaders() }
+    );
+    return response.data.data;
+};
+
+export const reassignAdminDocumentSigner = async (documentId, payload) => {
+    const response = await axios.post(
+        `${API_URL}/admin/documents/${documentId}/reassign-signer`,
+        payload,
+        { headers: authHeaders() }
+    );
+    return response.data.data;
+};
+
+export const updateAdminDocumentDeadline = async (documentId, payload) => {
+    const response = await axios.put(
+        `${API_URL}/admin/documents/${documentId}/deadline`,
+        payload,
+        { headers: authHeaders() }
+    );
+    return response.data.data;
+};
+
+export const requestAdminDocumentReminder = async (documentId, payload) => {
+    const response = await axios.post(
+        `${API_URL}/admin/documents/${documentId}/reminder`,
+        payload,
+        { headers: authHeaders() }
+    );
+    return response.data.data;
+};
+
 export const getAdminUsers = async () => {
     const response = await axios.get(`${API_URL}/admin/users`, {
         headers: authHeaders(),

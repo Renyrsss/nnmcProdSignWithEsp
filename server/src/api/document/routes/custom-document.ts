@@ -19,6 +19,30 @@ export default {
             config: { policies: [], middlewares: [] },
         },
         {
+            method: "POST",
+            path: "/admin/documents/:id/cancel",
+            handler: "api::document.document.cancelAdminDocument",
+            config: { policies: [], middlewares: [] },
+        },
+        {
+            method: "POST",
+            path: "/admin/documents/:id/reassign-signer",
+            handler: "api::document.document.reassignAdminDocumentSigner",
+            config: { policies: [], middlewares: [] },
+        },
+        {
+            method: "PUT",
+            path: "/admin/documents/:id/deadline",
+            handler: "api::document.document.updateAdminDocumentDeadline",
+            config: { policies: [], middlewares: [] },
+        },
+        {
+            method: "POST",
+            path: "/admin/documents/:id/reminder",
+            handler: "api::document.document.requestAdminDocumentReminder",
+            config: { policies: [], middlewares: [] },
+        },
+        {
             method: "GET",
             path: "/admin/users",
             handler: "api::document.document.findAdminUsers",
