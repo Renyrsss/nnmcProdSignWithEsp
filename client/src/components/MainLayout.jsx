@@ -1,8 +1,20 @@
 import React, { useState, useEffect } from "react";
-import { Outlet, Link, useLocation } from "react-router-dom";
-import { logout, getCurrentUser, isAdminUser, refreshCurrentUser } from "../api/auth";
+import { Outlet, NavLink, useLocation } from "react-router-dom";
+import {
+    logout,
+    getCurrentUser,
+    isAdminUser,
+    refreshCurrentUser,
+} from "../api/auth";
 import { getActionablePendingDocuments } from "../api/documents";
-import { LogOut, FileText, Clock, PlusCircle, Shield, Users } from "lucide-react";
+import {
+    LogOut,
+    FileText,
+    Clock,
+    PlusCircle,
+    Shield,
+    Users,
+} from "lucide-react";
 
 export default function MainLayout() {
     const [user, setUser] = useState(getCurrentUser());
@@ -49,173 +61,259 @@ export default function MainLayout() {
         window.location.reload();
     };
 
-    const isActive = (path) => {
-        return location.pathname === path;
+    const pathname = location.pathname;
+    const userName = user?.fullName || user?.username || "Пользователь";
+    const userEmail = user?.email || "";
+
+    const isDocumentDetailPath = () => {
+        const reservedDocumentRoutes = [
+            "/documents/pending",
+            "/documents/new",
+            "/documents/batch-sign",
+        ];
+
+        return (
+            /^\/documents\/[^/]+$/.test(pathname) &&
+            !reservedDocumentRoutes.includes(pathname)
+        );
     };
 
-    const isActivePrefix = (path) => {
-        return location.pathname === path || location.pathname.startsWith(`${path}/`);
+    const navItems = [
+        {
+            to: "/documents",
+            label: "Мои документы",
+            shortLabel: "Мои",
+            icon: FileText,
+            end: true,
+            isActive: () => pathname === "/documents" || isDocumentDetailPath(),
+        },
+        {
+            to: "/documents/pending",
+            label: "На подпись",
+            shortLabel: "Подпись",
+            icon: Clock,
+            count: pendingCount,
+            isActive: () =>
+                pathname === "/documents/pending" ||
+                pathname.startsWith("/documents/pending/") ||
+                pathname === "/documents/batch-sign",
+        },
+        {
+            to: "/documents/new",
+            label: "Создать",
+            shortLabel: "Создать",
+            icon: PlusCircle,
+            primary: true,
+            isActive: () => pathname === "/documents/new",
+        },
+    ];
+
+    const adminItems = [
+        {
+            to: "/admin/documents",
+            label: "Все документы",
+            shortLabel: "Все",
+            icon: Shield,
+            isActive: () =>
+                pathname === "/admin/documents" ||
+                pathname.startsWith("/admin/documents/"),
+        },
+        {
+            to: "/admin/users",
+            label: "Пользователи",
+            shortLabel: "Люди",
+            icon: Users,
+            isActive: () =>
+                pathname === "/admin/users" ||
+                pathname.startsWith("/admin/users/"),
+        },
+    ];
+
+    const visibleMobileItems = isAdmin ? [...navItems, ...adminItems] : navItems;
+    const currentItem =
+        [...navItems, ...(isAdmin ? adminItems : [])].find((item) => item.isActive()) ||
+        navItems[0];
+
+    const desktopNavLink = (item) => {
+        const Icon = item.icon;
+        const active = item.isActive();
+
+        return (
+            <NavLink
+                key={item.to}
+                to={item.to}
+                end={item.end}
+                aria-current={active ? "page" : undefined}
+                className={`group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+                    item.primary
+                        ? active
+                            ? "bg-indigo-700 text-white shadow-sm"
+                            : "bg-indigo-600 text-white shadow-sm hover:bg-indigo-700"
+                        : active
+                            ? "bg-indigo-50 text-indigo-700"
+                            : "text-gray-700 hover:bg-gray-100 hover:text-gray-950"
+                }`}>
+                <Icon className='h-5 w-5 shrink-0' />
+                <span className='min-w-0 flex-1 truncate'>{item.label}</span>
+                {item.count > 0 && (
+                    <span
+                        className={`ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-xs font-bold ${
+                            item.primary
+                                ? "bg-white text-indigo-700"
+                                : active
+                                    ? "bg-indigo-600 text-white"
+                                    : "bg-red-500 text-white"
+                        }`}>
+                        {item.count}
+                    </span>
+                )}
+            </NavLink>
+        );
+    };
+
+    const mobileNavLink = (item) => {
+        const Icon = item.icon;
+        const active = item.isActive();
+
+        return (
+            <NavLink
+                key={item.to}
+                to={item.to}
+                end={item.end}
+                aria-current={active ? "page" : undefined}
+                className={`relative flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-lg px-1.5 py-2 text-xs font-medium transition-colors ${
+                    item.primary
+                        ? active
+                            ? "bg-indigo-700 text-white"
+                            : "bg-indigo-600 text-white"
+                        : active
+                            ? "bg-indigo-50 text-indigo-700"
+                            : "text-gray-600 hover:bg-gray-100"
+                }`}>
+                <span className='relative'>
+                    <Icon className='h-5 w-5' />
+                    {item.count > 0 && (
+                        <span className='absolute -right-2.5 -top-2 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold leading-none text-white'>
+                            {item.count}
+                        </span>
+                    )}
+                </span>
+                <span className='max-w-full truncate leading-tight'>{item.shortLabel}</span>
+            </NavLink>
+        );
     };
 
     return (
-        <div className='min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100'>
-            <header className='bg-white shadow-sm border-b border-gray-200 sticky top-0 z-50'>
-                <div className='max-w-7xl mx-auto px-4 py-3'>
-                    <div className='flex items-center justify-between'>
-                        <div className='flex items-center gap-3'>
-                            <FileText className='w-8 h-8 text-indigo-600' />
-                            <h1 className='text-xl font-bold text-gray-800'>
-                                Электронная подпись
-                            </h1>
+        <div className='min-h-screen bg-slate-50 text-gray-900 lg:flex'>
+            <aside className='hidden lg:sticky lg:top-0 lg:flex lg:h-screen lg:w-72 lg:shrink-0 lg:flex-col lg:border-r lg:border-gray-200 lg:bg-white'>
+                <div className='flex h-full flex-col px-4 py-5'>
+                    <div className='mb-6 flex items-center gap-3 px-2'>
+                        <div className='flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-sm'>
+                            <FileText className='h-6 w-6' />
                         </div>
-
-                        <nav className='hidden md:flex items-center gap-2'>
-                            <Link
-                                to='/documents'
-                                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
-                                    isActive("/documents")
-                                        ? "bg-indigo-100 text-indigo-700"
-                                        : "text-gray-700 hover:bg-gray-100"
-                                }`}>
-                                <FileText className='w-5 h-5' />
-                                Мои документы
-                            </Link>
-
-                            <Link
-                                to='/documents/pending'
-                                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors relative ${
-                                    isActive("/documents/pending")
-                                        ? "bg-indigo-100 text-indigo-700"
-                                        : "text-gray-700 hover:bg-gray-100"
-                                }`}>
-                                <Clock className='w-5 h-5' />
-                                На подпись
-                                {pendingCount > 0 && (
-                                    <span className='absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center'>
-                                        {pendingCount}
-                                    </span>
-                                )}
-                            </Link>
-
-                            <Link
-                                to='/documents/new'
-                                className='flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors'>
-                                <PlusCircle className='w-5 h-5' />
-                                Создать
-                            </Link>
-
-                            {isAdmin && (
-                                <>
-                                    <Link
-                                        to='/admin/documents'
-                                        className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
-                                            isActivePrefix("/admin/documents")
-                                                ? "bg-indigo-100 text-indigo-700"
-                                                : "text-gray-700 hover:bg-gray-100"
-                                        }`}>
-                                        <Shield className='w-5 h-5' />
-                                        Все документы
-                                    </Link>
-
-                                    <Link
-                                        to='/admin/users'
-                                        className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
-                                            isActivePrefix("/admin/users")
-                                                ? "bg-indigo-100 text-indigo-700"
-                                                : "text-gray-700 hover:bg-gray-100"
-                                        }`}>
-                                        <Users className='w-5 h-5' />
-                                        Пользователи
-                                    </Link>
-                                </>
-                            )}
-                        </nav>
-
-                        <div className='flex items-center gap-3'>
-                            <div className='hidden sm:block text-right'>
-                                <p className='text-sm font-medium text-gray-900'>
-                                    {user?.username}
-                                </p>
-                                <p className='text-xs text-gray-500'>
-                                    {user?.email}
-                                </p>
-                            </div>
-                            <button
-                                onClick={handleLogout}
-                                className='flex items-center gap-2 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded-lg transition-colors'>
-                                <LogOut className='w-4 h-4' />
-                                <span className='hidden sm:inline'>Выйти</span>
-                            </button>
+                        <div className='min-w-0'>
+                            <p className='truncate text-base font-bold text-gray-950'>
+                                Электронная подпись
+                            </p>
+                            <p className='truncate text-xs text-gray-500'>
+                                Документооборот
+                            </p>
                         </div>
                     </div>
 
-                    <nav className='md:hidden flex items-center gap-2 mt-3 overflow-x-auto'>
-                        <Link
-                            to='/documents'
-                            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
-                                isActive("/documents")
-                                    ? "bg-indigo-100 text-indigo-700"
-                                    : "text-gray-700 hover:bg-gray-100"
-                            }`}>
-                            <FileText className='w-4 h-4' />
-                            Мои
-                        </Link>
-
-                        <Link
-                            to='/documents/pending'
-                            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors relative ${
-                                isActive("/documents/pending")
-                                    ? "bg-indigo-100 text-indigo-700"
-                                    : "text-gray-700 hover:bg-gray-100"
-                            }`}>
-                            <Clock className='w-4 h-4' />
-                            На подпись
-                            {pendingCount > 0 && (
-                                <span className='absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold rounded-full w-4 h-4 flex items-center justify-center'>
-                                    {pendingCount}
-                                </span>
-                            )}
-                        </Link>
-
-                        <Link
-                            to='/documents/new'
-                            className='flex items-center gap-2 px-3 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium whitespace-nowrap'>
-                            <PlusCircle className='w-4 h-4' />
-                            Создать
-                        </Link>
+                    <nav className='space-y-6' aria-label='Основная навигация'>
+                        <div>
+                            <p className='mb-2 px-3 text-xs font-semibold uppercase tracking-wide text-gray-400'>
+                                Работа
+                            </p>
+                            <div className='space-y-1'>{navItems.map(desktopNavLink)}</div>
+                        </div>
 
                         {isAdmin && (
-                            <>
-                                <Link
-                                    to='/admin/documents'
-                                    className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
-                                        isActivePrefix("/admin/documents")
-                                            ? "bg-indigo-100 text-indigo-700"
-                                            : "text-gray-700 hover:bg-gray-100"
-                                    }`}>
-                                    <Shield className='w-4 h-4' />
-                                    Все
-                                </Link>
-
-                                <Link
-                                    to='/admin/users'
-                                    className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
-                                        isActivePrefix("/admin/users")
-                                            ? "bg-indigo-100 text-indigo-700"
-                                            : "text-gray-700 hover:bg-gray-100"
-                                    }`}>
-                                    <Users className='w-4 h-4' />
-                                    Люди
-                                </Link>
-                            </>
+                            <div>
+                                <p className='mb-2 px-3 text-xs font-semibold uppercase tracking-wide text-gray-400'>
+                                    Администрирование
+                                </p>
+                                <div className='space-y-1'>
+                                    {adminItems.map(desktopNavLink)}
+                                </div>
+                            </div>
                         )}
                     </nav>
-                </div>
-            </header>
 
-            <main>
-                <Outlet />
-            </main>
+                    <div className='mt-auto border-t border-gray-200 pt-4'>
+                        <div className='mb-3 rounded-lg bg-gray-50 px-3 py-2.5'>
+                            <p className='truncate text-sm font-semibold text-gray-900'>
+                                {userName}
+                            </p>
+                            {userEmail && (
+                                <p className='truncate text-xs text-gray-500'>
+                                    {userEmail}
+                                </p>
+                            )}
+                        </div>
+                        <button
+                            type='button'
+                            onClick={handleLogout}
+                            className='flex w-full items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50'>
+                            <LogOut className='h-4 w-4' />
+                            Выйти
+                        </button>
+                    </div>
+                </div>
+            </aside>
+
+            <div className='flex min-h-screen min-w-0 flex-1 flex-col'>
+                <header className='sticky top-0 z-40 border-b border-gray-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur lg:hidden'>
+                    <div className='flex items-center justify-between gap-3'>
+                        <div className='flex min-w-0 items-center gap-3'>
+                            <div className='flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white'>
+                                <FileText className='h-5 w-5' />
+                            </div>
+                            <div className='min-w-0'>
+                                <p className='truncate text-sm font-semibold text-gray-500'>
+                                    Электронная подпись
+                                </p>
+                                <h1 className='truncate text-base font-bold text-gray-950'>
+                                    {currentItem.label}
+                                </h1>
+                            </div>
+                        </div>
+
+                        <div className='flex shrink-0 items-center gap-2'>
+                            <div className='hidden max-w-36 text-right sm:block'>
+                                <p className='truncate text-sm font-semibold text-gray-900'>
+                                    {userName}
+                                </p>
+                                {userEmail && (
+                                    <p className='truncate text-xs text-gray-500'>
+                                        {userEmail}
+                                    </p>
+                                )}
+                            </div>
+                            <button
+                                type='button'
+                                onClick={handleLogout}
+                                aria-label='Выйти'
+                                className='flex h-10 w-10 items-center justify-center rounded-lg text-red-600 transition-colors hover:bg-red-50'>
+                                <LogOut className='h-5 w-5' />
+                            </button>
+                        </div>
+                    </div>
+                </header>
+
+                <main className='min-w-0 flex-1 pb-24 lg:pb-0'>
+                    <Outlet />
+                </main>
+
+                <nav
+                    className='fixed inset-x-0 bottom-0 z-40 border-t border-gray-200 bg-white/95 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 shadow-[0_-10px_30px_rgba(15,23,42,0.08)] backdrop-blur lg:hidden'
+                    aria-label='Быстрая навигация'>
+                    <div className='mx-auto flex max-w-xl items-stretch gap-1'>
+                        {visibleMobileItems.map(mobileNavLink)}
+                    </div>
+                </nav>
+            </div>
         </div>
     );
 }
