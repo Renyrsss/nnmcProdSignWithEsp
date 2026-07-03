@@ -68,6 +68,30 @@ export default {
         },
         {
             method: "GET",
+            path: "/admin/document-types",
+            handler: "api::document.document.findAdminDocumentTypes",
+            config: { policies: [], middlewares: [] },
+        },
+        {
+            method: "POST",
+            path: "/admin/document-types",
+            handler: "api::document.document.createAdminDocumentType",
+            config: { policies: [], middlewares: [] },
+        },
+        {
+            method: "PUT",
+            path: "/admin/document-types/:id",
+            handler: "api::document.document.updateAdminDocumentType",
+            config: { policies: [], middlewares: [] },
+        },
+        {
+            method: "DELETE",
+            path: "/admin/document-types/:id",
+            handler: "api::document.document.deleteAdminDocumentType",
+            config: { policies: [], middlewares: [] },
+        },
+        {
+            method: "GET",
             path: "/documents/mine",
             handler: "api::document.document.findMine",
             config: { policies: [], middlewares: [] },

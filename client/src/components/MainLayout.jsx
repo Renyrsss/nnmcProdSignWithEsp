@@ -14,6 +14,7 @@ import {
     PlusCircle,
     Shield,
     Users,
+    FileCog,
 } from "lucide-react";
 
 export default function MainLayout() {
@@ -126,6 +127,15 @@ export default function MainLayout() {
             isActive: () =>
                 pathname === "/admin/users" ||
                 pathname.startsWith("/admin/users/"),
+        },
+        {
+            to: "/admin/document-types",
+            label: "Типы документов",
+            shortLabel: "Типы",
+            icon: FileCog,
+            isActive: () =>
+                pathname === "/admin/document-types" ||
+                pathname.startsWith("/admin/document-types/"),
         },
     ];
 

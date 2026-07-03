@@ -149,6 +149,98 @@ const toSafeDepartmentSummary = (department: any) => ({
         : [],
 });
 
+const normalizeIdArray = (value: any) => {
+    if (!Array.isArray(value)) return [];
+
+    return Array.from(
+        new Set(
+            value
+                .map((item) => Number(item))
+                .filter((item) => Number.isFinite(item) && item > 0)
+        )
+    );
+};
+
+const normalizeDeadlineDays = (value: any) => {
+    if (value === undefined || value === null || value === "") return null;
+
+    const parsed = Number.parseInt(String(value), 10);
+    if (!Number.isFinite(parsed) || parsed < 1 || parsed > 3650) return undefined;
+
+    return parsed;
+};
+
+const getDepartmentsForAssignment = async (strapi: any, departmentIds: any) => {
+    const ids = normalizeIdArray(departmentIds);
+    if (ids.length === 0) return [];
+
+    const departments = await strapi.db
+        .query("api::department.department")
+        .findMany({ where: { id: { $in: ids } } });
+
+    if (departments.length !== ids.length) return null;
+    return departments;
+};
+
+const normalizeMandatorySigners = async (strapi: any, signers: any) => {
+    if (!Array.isArray(signers)) return [];
+
+    const ids = normalizeIdArray(signers.map((signer: any) => signer?.userId));
+    if (ids.length === 0) return [];
+
+    const users = await strapi.db
+        .query("plugin::users-permissions.user")
+        .findMany({
+            where: { id: { $in: ids } },
+            populate: ["department"],
+        });
+
+    if (users.length !== ids.length) return null;
+
+    const usersById = new Map<number, any>(
+        users.map((user: any) => [Number(user.id), user])
+    );
+
+    return signers
+        .map((signer: any, index: number) => {
+            const userId = Number(signer?.userId);
+            const user = usersById.get(userId);
+            if (!user) return null;
+
+            return {
+                userId: user.id,
+                userName: user.fullName || user.username,
+                userEmail: user.email,
+                departmentId: user.department?.id || null,
+                departmentName: user.department?.name || null,
+                role: cleanString(signer?.role) || "Подписант",
+                order: index + 1,
+            };
+        })
+        .filter(Boolean);
+};
+
+const toSafeDocumentType = (documentType: any, documentsCount = 0) => ({
+    id: documentType.id,
+    documentId: documentType.documentId,
+    name: documentType.name,
+    requiresEds: Boolean(documentType.requiresEds),
+    defaultSignatureSequential: Boolean(documentType.defaultSignatureSequential),
+    signingDeadlineDays: documentType.signingDeadlineDays || null,
+    mandatorySigners: Array.isArray(documentType.mandatorySigners)
+        ? documentType.mandatorySigners
+        : [],
+    qrTemplate: documentType.qrTemplate || "",
+    stampTemplate: documentType.stampTemplate || "",
+    allowedDepartments: Array.isArray(documentType.allowedDepartments)
+        ? documentType.allowedDepartments.map((department: any) => ({
+              id: department.id,
+              name: department.name,
+          }))
+        : [],
+    documentsCount,
+});
+
 const getAuthenticatedUser = async (strapi: any, userId: number | string) => {
     return strapi.db.query("plugin::users-permissions.user").findOne({
         where: { id: userId },
@@ -1080,6 +1172,228 @@ export default factories.createCoreController(
             );
 
             return ctx.send({ data: { id: department.id } });
+        },
+
+        /**
+         * GET /api/admin/document-types
+         */
+        async findAdminDocumentTypes(ctx) {
+            const admin = await requireAppAdmin(ctx, strapi);
+            if (!admin) return;
+
+            const documentTypes = await strapi.db
+                .query("api::document-type.document-type")
+                .findMany({
+                    orderBy: [{ name: "asc" }],
+                    populate: ["allowedDepartments"],
+                });
+
+            const data = await Promise.all(
+                documentTypes.map(async (documentType: any) => {
+                    const documentsCount = await strapi.db
+                        .query("api::document.document")
+                        .count({
+                            where: { documentType: { id: documentType.id } },
+                        });
+
+                    return toSafeDocumentType(documentType, documentsCount);
+                })
+            );
+
+            return ctx.send({
+                data,
+                meta: { documentTypesCount: data.length },
+            });
+        },
+
+        /**
+         * POST /api/admin/document-types
+         */
+        async createAdminDocumentType(ctx) {
+            const admin = await requireAppAdmin(ctx, strapi);
+            if (!admin) return;
+
+            const body = ctx.request.body || {};
+            const name = cleanString(body.name);
+            const signingDeadlineDays = normalizeDeadlineDays(
+                body.signingDeadlineDays
+            );
+
+            if (name.length < 2) {
+                return ctx.badRequest(
+                    "Название типа документа должно быть не короче 2 символов"
+                );
+            }
+            if (signingDeadlineDays === undefined) {
+                return ctx.badRequest("Срок подписания должен быть от 1 до 3650 дней");
+            }
+
+            const [sameName, allowedDepartments, mandatorySigners] =
+                await Promise.all([
+                    strapi.db
+                        .query("api::document-type.document-type")
+                        .findOne({ where: { name } }),
+                    getDepartmentsForAssignment(strapi, body.allowedDepartmentIds),
+                    normalizeMandatorySigners(strapi, body.mandatorySigners),
+                ]);
+
+            if (sameName) {
+                return ctx.badRequest("Тип документа с таким названием уже существует");
+            }
+            if (!allowedDepartments) return ctx.badRequest("Один из отделов не найден");
+            if (!mandatorySigners) {
+                return ctx.badRequest("Один из обязательных подписантов не найден");
+            }
+
+            const created = await strapi.db
+                .query("api::document-type.document-type")
+                .create({
+                    data: {
+                        name,
+                        requiresEds: Boolean(body.requiresEds),
+                        defaultSignatureSequential: Boolean(
+                            body.defaultSignatureSequential
+                        ),
+                        signingDeadlineDays,
+                        mandatorySigners,
+                        qrTemplate: cleanString(body.qrTemplate),
+                        stampTemplate: cleanString(body.stampTemplate),
+                        allowedDepartments: allowedDepartments.map(
+                            (department: any) => department.id
+                        ),
+                    },
+                });
+
+            const documentType = await strapi.db
+                .query("api::document-type.document-type")
+                .findOne({
+                    where: { id: created.id },
+                    populate: ["allowedDepartments"],
+                });
+
+            strapi.log.info(
+                `[app-admin] user=${admin.id} created documentType=${created.id}`
+            );
+
+            return ctx.created({ data: toSafeDocumentType(documentType, 0) });
+        },
+
+        /**
+         * PUT /api/admin/document-types/:id
+         */
+        async updateAdminDocumentType(ctx) {
+            const admin = await requireAppAdmin(ctx, strapi);
+            if (!admin) return;
+
+            const { id } = ctx.params;
+            const body = ctx.request.body || {};
+            const name = cleanString(body.name);
+            const signingDeadlineDays = normalizeDeadlineDays(
+                body.signingDeadlineDays
+            );
+
+            if (name.length < 2) {
+                return ctx.badRequest(
+                    "Название типа документа должно быть не короче 2 символов"
+                );
+            }
+            if (signingDeadlineDays === undefined) {
+                return ctx.badRequest("Срок подписания должен быть от 1 до 3650 дней");
+            }
+
+            const targetDocumentType = await strapi.db
+                .query("api::document-type.document-type")
+                .findOne({ where: { id } });
+
+            if (!targetDocumentType) return ctx.notFound("Тип документа не найден");
+
+            const [sameName, allowedDepartments, mandatorySigners] =
+                await Promise.all([
+                    strapi.db
+                        .query("api::document-type.document-type")
+                        .findOne({ where: { name } }),
+                    getDepartmentsForAssignment(strapi, body.allowedDepartmentIds),
+                    normalizeMandatorySigners(strapi, body.mandatorySigners),
+                ]);
+
+            if (sameName && Number(sameName.id) !== Number(id)) {
+                return ctx.badRequest("Тип документа с таким названием уже существует");
+            }
+            if (!allowedDepartments) return ctx.badRequest("Один из отделов не найден");
+            if (!mandatorySigners) {
+                return ctx.badRequest("Один из обязательных подписантов не найден");
+            }
+
+            await strapi.db.query("api::document-type.document-type").update({
+                where: { id },
+                data: {
+                    name,
+                    requiresEds: Boolean(body.requiresEds),
+                    defaultSignatureSequential: Boolean(
+                        body.defaultSignatureSequential
+                    ),
+                    signingDeadlineDays,
+                    mandatorySigners,
+                    qrTemplate: cleanString(body.qrTemplate),
+                    stampTemplate: cleanString(body.stampTemplate),
+                    allowedDepartments: allowedDepartments.map(
+                        (department: any) => department.id
+                    ),
+                },
+            });
+
+            const updated = await strapi.db
+                .query("api::document-type.document-type")
+                .findOne({
+                    where: { id },
+                    populate: ["allowedDepartments"],
+                });
+            const documentsCount = await strapi.db
+                .query("api::document.document")
+                .count({ where: { documentType: { id } } });
+
+            strapi.log.info(
+                `[app-admin] user=${admin.id} updated documentType=${targetDocumentType.id}`
+            );
+
+            return ctx.send({
+                data: toSafeDocumentType(updated, documentsCount),
+            });
+        },
+
+        /**
+         * DELETE /api/admin/document-types/:id
+         */
+        async deleteAdminDocumentType(ctx) {
+            const admin = await requireAppAdmin(ctx, strapi);
+            if (!admin) return;
+
+            const { id } = ctx.params;
+            const documentType = await strapi.db
+                .query("api::document-type.document-type")
+                .findOne({ where: { id } });
+
+            if (!documentType) return ctx.notFound("Тип документа не найден");
+
+            const documentsCount = await strapi.db
+                .query("api::document.document")
+                .count({ where: { documentType: { id } } });
+
+            if (documentsCount > 0) {
+                return ctx.badRequest(
+                    "Нельзя удалить тип документа, к которому уже привязаны документы"
+                );
+            }
+
+            await strapi.db.query("api::document-type.document-type").delete({
+                where: { id },
+            });
+
+            strapi.log.info(
+                `[app-admin] user=${admin.id} deleted documentType=${documentType.id}`
+            );
+
+            return ctx.send({ data: { id: documentType.id } });
         },
 
         /**

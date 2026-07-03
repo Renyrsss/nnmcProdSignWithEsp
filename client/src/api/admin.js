@@ -77,6 +77,37 @@ export const deleteAdminDepartment = async (departmentId) => {
     return response.data.data;
 };
 
+export const getAdminDocumentTypes = async () => {
+    const response = await axios.get(`${API_URL}/admin/document-types`, {
+        headers: authHeaders(),
+    });
+    return response.data.data;
+};
+
+export const createAdminDocumentType = async (payload) => {
+    const response = await axios.post(`${API_URL}/admin/document-types`, payload, {
+        headers: authHeaders(),
+    });
+    return response.data.data;
+};
+
+export const updateAdminDocumentType = async (documentTypeId, payload) => {
+    const response = await axios.put(
+        `${API_URL}/admin/document-types/${documentTypeId}`,
+        payload,
+        { headers: authHeaders() }
+    );
+    return response.data.data;
+};
+
+export const deleteAdminDocumentType = async (documentTypeId) => {
+    const response = await axios.delete(
+        `${API_URL}/admin/document-types/${documentTypeId}`,
+        { headers: authHeaders() }
+    );
+    return response.data.data;
+};
+
 export const changeUserPassword = async (userId, password) => {
     const response = await axios.put(
         `${API_URL}/admin/users/${userId}/password`,

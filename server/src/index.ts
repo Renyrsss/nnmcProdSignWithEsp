@@ -68,6 +68,10 @@ const ADMIN_APP_ACTIONS = [
     "api::document.document.createAdminDepartment",
     "api::document.document.updateAdminDepartment",
     "api::document.document.deleteAdminDepartment",
+    "api::document.document.findAdminDocumentTypes",
+    "api::document.document.createAdminDocumentType",
+    "api::document.document.updateAdminDocumentType",
+    "api::document.document.deleteAdminDocumentType",
 ];
 
 const ensurePermission = async (

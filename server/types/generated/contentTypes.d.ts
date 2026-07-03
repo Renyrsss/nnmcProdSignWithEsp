@@ -486,9 +486,15 @@ export interface ApiDocumentTypeDocumentType
     draftAndPublish: false;
   };
   attributes: {
+    allowedDepartments: Schema.Attribute.Relation<
+      'manyToMany',
+      'api::department.department'
+    >;
     createdAt: Schema.Attribute.DateTime;
     createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
       Schema.Attribute.Private;
+    defaultSignatureSequential: Schema.Attribute.Boolean &
+      Schema.Attribute.DefaultTo<false>;
     documents: Schema.Attribute.Relation<'oneToMany', 'api::document.document'>;
     locale: Schema.Attribute.String & Schema.Attribute.Private;
     localizations: Schema.Attribute.Relation<
@@ -496,10 +502,15 @@ export interface ApiDocumentTypeDocumentType
       'api::document-type.document-type'
     > &
       Schema.Attribute.Private;
+    mandatorySigners: Schema.Attribute.JSON;
     name: Schema.Attribute.String &
       Schema.Attribute.Required &
       Schema.Attribute.Unique;
     publishedAt: Schema.Attribute.DateTime;
+    qrTemplate: Schema.Attribute.Text;
+    requiresEds: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
+    signingDeadlineDays: Schema.Attribute.Integer;
+    stampTemplate: Schema.Attribute.Text;
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
       Schema.Attribute.Private;

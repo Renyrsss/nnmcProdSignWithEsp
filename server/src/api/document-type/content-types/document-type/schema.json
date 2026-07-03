@@ -17,6 +17,31 @@
       "required": true,
       "unique": true
     },
+    "requiresEds": {
+      "type": "boolean",
+      "default": false
+    },
+    "defaultSignatureSequential": {
+      "type": "boolean",
+      "default": false
+    },
+    "signingDeadlineDays": {
+      "type": "integer"
+    },
+    "mandatorySigners": {
+      "type": "json"
+    },
+    "qrTemplate": {
+      "type": "text"
+    },
+    "stampTemplate": {
+      "type": "text"
+    },
+    "allowedDepartments": {
+      "type": "relation",
+      "relation": "manyToMany",
+      "target": "api::department.department"
+    },
     "documents": {
       "type": "relation",
       "relation": "oneToMany",
