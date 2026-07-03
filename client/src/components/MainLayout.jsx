@@ -16,6 +16,7 @@ import {
     Users,
     FileCog,
     ClipboardList,
+    ShieldCheck,
 } from "lucide-react";
 
 export default function MainLayout() {
@@ -146,6 +147,15 @@ export default function MainLayout() {
             isActive: () =>
                 pathname === "/admin/audit-logs" ||
                 pathname.startsWith("/admin/audit-logs/"),
+        },
+        {
+            to: "/admin/signature-monitoring",
+            label: "Мониторинг подписей",
+            shortLabel: "ЭЦП",
+            icon: ShieldCheck,
+            isActive: () =>
+                pathname === "/admin/signature-monitoring" ||
+                pathname.startsWith("/admin/signature-monitoring/"),
         },
     ];
 

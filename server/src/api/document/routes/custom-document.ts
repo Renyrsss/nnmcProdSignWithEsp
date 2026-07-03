@@ -25,6 +25,18 @@ export default {
             config: { policies: [], middlewares: [] },
         },
         {
+            method: "GET",
+            path: "/admin/signature-monitoring",
+            handler: "api::document.document.findAdminSignatureMonitoring",
+            config: { policies: [], middlewares: [] },
+        },
+        {
+            method: "POST",
+            path: "/admin/documents/:id/recheck-signatures",
+            handler: "api::document.document.recheckAdminDocumentSignatures",
+            config: { policies: [], middlewares: [] },
+        },
+        {
             method: "POST",
             path: "/admin/documents/:id/cancel",
             handler: "api::document.document.cancelAdminDocument",
@@ -136,6 +148,12 @@ export default {
             method: "GET",
             path: "/documents/:id/presign",
             handler: "api::document.document.presignUrl",
+            config: { policies: [], middlewares: [] },
+        },
+        {
+            method: "POST",
+            path: "/documents/:id/signature-error",
+            handler: "api::document.document.reportSignatureError",
             config: { policies: [], middlewares: [] },
         },
     ],

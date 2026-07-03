@@ -54,6 +54,7 @@ const AUTHENTICATED_APP_ACTIONS = [
     "api::document.document.findMine",
     "api::document.document.getFileUrl",
     "api::document.document.presignUrl",
+    "api::document.document.reportSignatureError",
     "api::document.document.getAppMe",
 ];
 
@@ -61,6 +62,8 @@ const ADMIN_APP_ACTIONS = [
     "api::document.document.findAdminDocuments",
     "api::document.document.findAdminDocument",
     "api::document.document.findAdminAuditLogs",
+    "api::document.document.findAdminSignatureMonitoring",
+    "api::document.document.recheckAdminDocumentSignatures",
     "api::document.document.cancelAdminDocument",
     "api::document.document.reassignAdminDocumentSigner",
     "api::document.document.updateAdminDocumentDeadline",

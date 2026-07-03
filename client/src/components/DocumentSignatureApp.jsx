@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import EdsSignature from "./EdsSignature";
 import { useToast } from "./Toast";
+import { reportDocumentSignatureError } from "../api/documents";
 
 const getUserFullName = () => {
     const user = localStorage.getItem("user");
@@ -188,11 +189,9 @@ export default function DocumentSignatureApp({
             const textContent = await page.getTextContent();
             const viewport = page.getViewport({ scale: 1 });
 
-            let fullText = "";
             const textItems = [];
 
             textContent.items.forEach((item) => {
-                fullText += item.str + " ";
                 textItems.push({
                     text: item.str,
                     x: item.transform[4],
@@ -405,7 +404,7 @@ export default function DocumentSignatureApp({
 
             const pages = pdfDoc.getPages();
             const lastPage = pages[pages.length - 1];
-            const { width, height } = lastPage.getSize();
+            const { width } = lastPage.getSize();
 
             // Загружаем шрифт для кириллицы
             let font;
@@ -681,6 +680,20 @@ export default function DocumentSignatureApp({
         }
     };
 
+    const handleEdsSignatureError = async (errorInfo) => {
+        if (!documentId || !isSigningDocument) return;
+
+        try {
+            await reportDocumentSignatureError(documentId, {
+                message: errorInfo?.message || "Ошибка подписания NCALayer",
+                code: errorInfo?.code || null,
+                source: errorInfo?.source || "eds-signature",
+            });
+        } catch (error) {
+            console.error("Ошибка записи мониторинга подписи:", error);
+        }
+    };
+
     // Если тип подписи ЭЦП - показываем компонент EdsSignature
     if (selectedSignatureType === "eds" && file) {
         return (
@@ -703,6 +716,7 @@ export default function DocumentSignatureApp({
                         <EdsSignature
                             file={file}
                             onSignatureComplete={handleEdsSignatureComplete}
+                            onSignatureError={handleEdsSignatureError}
                             isCreatingDocument={isCreatingDocument}
                             isSigningDocument={isSigningDocument}
                             signatureIndex={signatureIndex}

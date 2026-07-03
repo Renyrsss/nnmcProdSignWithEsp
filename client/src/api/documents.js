@@ -149,6 +149,16 @@ export const presignDocumentFile = async (documentId, key) => {
     return response.data.url;
 };
 
+export const reportDocumentSignatureError = async (documentId, payload) => {
+    const token = getToken();
+    const response = await axios.post(
+        `${API_URL}/documents/${documentId}/signature-error`,
+        payload,
+        { headers: { Authorization: `Bearer ${token}` } }
+    );
+    return response.data.data;
+};
+
 // Отозвать документ (Strapi v5 использует documentId в URL)
 export const cancelDocument = async (documentId) => {
     const token = getToken();

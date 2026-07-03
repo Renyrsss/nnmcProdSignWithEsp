@@ -466,6 +466,8 @@ export interface ApiAuditLogAuditLog extends Struct.CollectionTypeSchema {
         'document_signer_reassigned',
         'document_deadline_updated',
         'document_reminder_requested',
+        'document_signature_error',
+        'document_signature_rechecked',
         'document_deleted',
       ]
     > &
@@ -617,6 +619,7 @@ export interface ApiDocumentDocument extends Struct.CollectionTypeSchema {
     originalFile: Schema.Attribute.Media<'files'>;
     publishedAt: Schema.Attribute.DateTime;
     signatureHistory: Schema.Attribute.JSON;
+    signatureMonitoring: Schema.Attribute.JSON;
     signatureSequential: Schema.Attribute.Boolean &
       Schema.Attribute.DefaultTo<false>;
     signatureType: Schema.Attribute.Enumeration<['eds', 'simple']>;

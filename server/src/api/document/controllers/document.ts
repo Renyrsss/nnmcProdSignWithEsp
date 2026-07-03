@@ -546,6 +546,216 @@ const buildAdminAuditLogFilters = (query: any) => {
     return andFilters.length > 0 ? { $and: andFilters } : undefined;
 };
 
+const getDateTime = (value: any) => {
+    if (!value) return null;
+    const date = new Date(String(value));
+    if (Number.isNaN(date.getTime())) return null;
+    return date.getTime();
+};
+
+const getSignatureHistory = (document: any) =>
+    Array.isArray(document?.signatureHistory) ? document.signatureHistory : [];
+
+const getDocumentSigners = (document: any) =>
+    Array.isArray(document?.signers) ? document.signers : [];
+
+const getEdsSignatureEntries = (document: any) =>
+    getSignatureHistory(document).filter(
+        (entry: any) =>
+            entry?.signatureType === "eds" ||
+            entry?.type === "eds" ||
+            entry?.cmsFileUrl ||
+            entry?.cmsFileName
+    );
+
+const buildCmsCheckSummary = (document: any) => {
+    const entries = getEdsSignatureEntries(document);
+    const entriesWithCms = entries.filter((entry: any) => entry?.cmsFileUrl);
+    const missingCmsEntries = entries.filter((entry: any) => !entry?.cmsFileUrl);
+
+    return {
+        signedEntries: entries.length,
+        cmsFiles: entriesWithCms.length,
+        missingCms: missingCmsEntries.length,
+        status:
+            entries.length === 0
+                ? "no_signatures"
+                : missingCmsEntries.length > 0
+                  ? "missing_cms"
+                  : "cms_present",
+    };
+};
+
+const getCertificateStatus = (entry: any, nowMs: number) => {
+    const validToMs = getDateTime(
+        entry?.certificateValidTo || entry?.certValidTo || entry?.validTo
+    );
+    const validFromMs = getDateTime(
+        entry?.certificateValidFrom || entry?.certValidFrom || entry?.validFrom
+    );
+
+    if (!validToMs && !validFromMs) return "unknown";
+    if (validToMs && validToMs < nowMs) return "expired";
+    if (validFromMs && validFromMs > nowMs) return "not_yet_valid";
+    return "valid";
+};
+
+const buildSignatureMonitoringRecord = (document: any, now = new Date()) => {
+    const nowMs = now.getTime();
+    const signers = getDocumentSigners(document);
+    const pendingSigners = signers.filter((signer: any) => signer?.status !== "signed");
+    const signedSigners = signers.filter((signer: any) => signer?.status === "signed");
+    const edsEntries = getEdsSignatureEntries(document);
+    const cmsSummary = buildCmsCheckSummary(document);
+    const deadlineMs = getDateTime(document?.signingDeadlineAt);
+    const isActive = ACTIVE_DOCUMENT_STATUSES.has(document?.status);
+    const isOverdue = Boolean(
+        isActive && pendingSigners.length > 0 && deadlineMs && deadlineMs < nowMs
+    );
+    const monitoring = document?.signatureMonitoring || {};
+    const lastError = monitoring?.lastError || null;
+
+    const certificates = edsEntries.map((entry: any) => ({
+        userId: entry.userId || null,
+        userName: entry.userName || entry.name || null,
+        role: entry.role || null,
+        iin: entry.iin || null,
+        signedAt: entry.signedAt || entry.date || null,
+        cmsFileName: entry.cmsFileName || null,
+        hasCms: Boolean(entry.cmsFileUrl),
+        certificateValidFrom:
+            entry.certificateValidFrom || entry.certValidFrom || entry.validFrom || null,
+        certificateValidTo:
+            entry.certificateValidTo || entry.certValidTo || entry.validTo || null,
+        certificateStatus: getCertificateStatus(entry, nowMs),
+    }));
+
+    const issues = [];
+    if (isActive && pendingSigners.length > 0) issues.push("unsigned");
+    if (isOverdue) issues.push("overdue");
+    if (cmsSummary.missingCms > 0) issues.push("missing_cms");
+    if (lastError) issues.push("error");
+    if (certificates.some((item: any) => item.certificateStatus === "expired")) {
+        issues.push("cert_expired");
+    }
+    if (certificates.some((item: any) => item.certificateStatus === "unknown")) {
+        issues.push("cert_unknown");
+    }
+
+    return {
+        id: document.id,
+        documentId: document.documentId,
+        uid: document.uid,
+        title: document.title,
+        status: document.status,
+        signatureType: document.signatureType,
+        signatureSequential: Boolean(document.signatureSequential),
+        createdAt: document.createdAt,
+        updatedAt: document.updatedAt,
+        signingDeadlineAt: document.signingDeadlineAt || null,
+        isOverdue,
+        creator: document.creator
+            ? {
+                  id: document.creator.id,
+                  username: document.creator.username,
+                  fullName: document.creator.fullName,
+                  email: document.creator.email,
+                  department: toSafeDepartment(document.creator.department),
+              }
+            : null,
+        documentType: document.documentType
+            ? {
+                  id: document.documentType.id,
+                  name: document.documentType.name,
+              }
+            : null,
+        signers: signers.map((signer: any) => ({
+            userId: signer.userId,
+            userName: signer.userName,
+            userEmail: signer.userEmail,
+            role: signer.role,
+            status: signer.status || "pending",
+            signedAt: signer.signedAt || null,
+            departmentName: signer.departmentName || null,
+        })),
+        progress: {
+            signed: signedSigners.length,
+            total: signers.length,
+            pending: pendingSigners.length,
+        },
+        pendingSigners: pendingSigners.map((signer: any) => ({
+            userId: signer.userId,
+            userName: signer.userName,
+            userEmail: signer.userEmail,
+            role: signer.role,
+        })),
+        cms: {
+            ...cmsSummary,
+            lastRecheckAt: monitoring?.lastCmsRecheck?.checkedAt || null,
+            lastRecheckBy: monitoring?.lastCmsRecheck?.checkedByName || null,
+            lastRecheckStatus: monitoring?.lastCmsRecheck?.status || null,
+        },
+        certificates,
+        lastError,
+        errors: Array.isArray(monitoring?.errors) ? monitoring.errors : [],
+        issues,
+    };
+};
+
+const matchesSignatureIssue = (record: any, issue: string) => {
+    if (!issue || issue === "all") return true;
+    if (issue === "completed") return record.status === "completed";
+    return record.issues.includes(issue);
+};
+
+const buildSignatureMonitoringSummary = (records: any[]) =>
+    records.reduce(
+        (acc, record) => {
+            acc.total += 1;
+            if (record.signatureType === "eds") acc.eds += 1;
+            if (record.status === "completed") acc.completed += 1;
+            if (record.issues.includes("unsigned")) acc.unsigned += 1;
+            if (record.issues.includes("overdue")) acc.overdue += 1;
+            if (record.issues.includes("missing_cms")) acc.missingCms += 1;
+            if (record.issues.includes("error")) acc.errors += 1;
+            if (record.issues.includes("cert_expired")) acc.certExpired += 1;
+            if (record.issues.includes("cert_unknown")) acc.certUnknown += 1;
+            return acc;
+        },
+        {
+            total: 0,
+            eds: 0,
+            completed: 0,
+            unsigned: 0,
+            overdue: 0,
+            missingCms: 0,
+            errors: 0,
+            certExpired: 0,
+            certUnknown: 0,
+        }
+    );
+
+const appendSignatureMonitoringError = (
+    document: any,
+    user: any,
+    details: Record<string, any>
+) => {
+    const monitoring = document?.signatureMonitoring || {};
+    const errors = Array.isArray(monitoring.errors) ? monitoring.errors : [];
+    const errorEntry = {
+        date: new Date().toISOString(),
+        userId: user?.id || null,
+        userName: user?.fullName || user?.username || user?.email || null,
+        ...details,
+    };
+
+    return {
+        ...monitoring,
+        lastError: errorEntry,
+        errors: [errorEntry, ...errors].slice(0, 20),
+    };
+};
+
 const findDocumentForAccess = async (strapi: any, id: string | number) => {
     try {
         const document = await strapi
@@ -1315,6 +1525,101 @@ export default factories.createCoreController(
                     pageCount: Math.ceil(total / pageSize),
                 },
             });
+        },
+
+        /**
+         * GET /api/admin/signature-monitoring
+         */
+        async findAdminSignatureMonitoring(ctx) {
+            const admin = await requireAppAdmin(ctx, strapi);
+            if (!admin) return;
+
+            const page = toPositiveInt(ctx.query.page, 1, 100000);
+            const pageSize = toPositiveInt(ctx.query.pageSize, 50, 200);
+            const issue = cleanString(normalizeQueryValue(ctx.query.issue)) || "all";
+            const filters = buildAdminDocumentFilters(ctx.query);
+
+            const documents = await strapi.documents("api::document.document").findMany({
+                filters,
+                populate: getDocumentPopulate(),
+                sort: { createdAt: "desc" } as any,
+                limit: 10000,
+            } as any);
+
+            const records = documents.map((document: any) =>
+                buildSignatureMonitoringRecord(document)
+            );
+            const summary = buildSignatureMonitoringSummary(records);
+            const filteredRecords = records.filter((record: any) =>
+                matchesSignatureIssue(record, issue)
+            );
+            const total = filteredRecords.length;
+
+            return ctx.send({
+                data: filteredRecords.slice((page - 1) * pageSize, page * pageSize),
+                meta: {
+                    total,
+                    page,
+                    pageSize,
+                    pageCount: Math.ceil(total / pageSize) || 1,
+                    summary,
+                },
+            });
+        },
+
+        /**
+         * POST /api/admin/documents/:id/recheck-signatures
+         */
+        async recheckAdminDocumentSignatures(ctx) {
+            const admin = await requireAppAdmin(ctx, strapi);
+            if (!admin) return;
+
+            const { id } = ctx.params;
+            const document = await getDocumentByNumericOrDocumentId(strapi, id, [
+                "creator",
+                "assigned_users",
+                "documentType",
+            ]);
+            if (!document) return ctx.notFound("Документ не найден");
+
+            const cmsSummary = buildCmsCheckSummary(document);
+            const lastCmsRecheck = {
+                ...cmsSummary,
+                checkedAt: new Date().toISOString(),
+                checkedById: admin.id,
+                checkedByName: admin.fullName || admin.username,
+            };
+
+            await strapi.db.query("api::document.document").update({
+                where: { id: document.id },
+                data: {
+                    signatureMonitoring: {
+                        ...(document.signatureMonitoring || {}),
+                        lastCmsRecheck,
+                    },
+                    adminActionHistory: appendAdminAction(
+                        document,
+                        admin,
+                        "recheck_signatures",
+                        lastCmsRecheck
+                    ),
+                },
+            });
+
+            const updated = await strapi.db
+                .query("api::document.document")
+                .findOne({
+                    where: { id: document.id },
+                    populate: getDocumentPopulate(),
+                });
+
+            await createAuditLog(strapi, ctx, "document_signature_rechecked", {
+                document: updated,
+                actor: admin,
+                metadata: lastCmsRecheck,
+            });
+
+            return ctx.send({ data: buildSignatureMonitoringRecord(updated) });
         },
 
         /**
@@ -2123,6 +2428,66 @@ export default factories.createCoreController(
             });
 
             return ctx.send({ url: signedUrl });
+        },
+
+        /**
+         * POST /api/documents/:id/signature-error
+         *
+         * Неблокирующая запись ошибки NCALayer/ЭЦП для админского мониторинга.
+         */
+        async reportSignatureError(ctx) {
+            const user = ctx.state.user;
+            if (!user) return ctx.unauthorized("Необходима авторизация");
+
+            const { id } = ctx.params;
+            const message = cleanString(ctx.request.body?.message);
+            const code = cleanString(ctx.request.body?.code);
+            const source = cleanString(ctx.request.body?.source) || "client";
+
+            if (!message) return ctx.badRequest("Текст ошибки обязателен");
+
+            const document = await getDocumentByNumericOrDocumentId(strapi, id, [
+                "creator",
+                "assigned_users",
+            ]);
+            if (!document) return ctx.notFound("Документ не найден");
+
+            const isCreator = document.creator?.id === user.id;
+            const isAssigned = (document.assigned_users as any[])?.some(
+                (assignedUser) => assignedUser.id === user.id
+            );
+            const fullUser = await getAuthenticatedUser(strapi, user.id);
+            const isAdmin = isAppAdminRole(fullUser?.role);
+            if (!isCreator && !isAssigned && !isAdmin) {
+                return ctx.forbidden("Нет доступа к этому документу");
+            }
+
+            const signatureMonitoring = appendSignatureMonitoringError(
+                document,
+                fullUser || user,
+                {
+                    message: message.slice(0, 500),
+                    code: code || null,
+                    source,
+                }
+            );
+
+            await strapi.db.query("api::document.document").update({
+                where: { id: document.id },
+                data: { signatureMonitoring },
+            });
+
+            await createAuditLog(strapi, ctx, "document_signature_error", {
+                document,
+                actor: fullUser || user,
+                metadata: {
+                    message: message.slice(0, 500),
+                    code: code || null,
+                    source,
+                },
+            });
+
+            return ctx.send({ data: { ok: true } });
         },
     })
 );

@@ -78,6 +78,24 @@ export const getAdminAuditLogs = async (params = {}) => {
     return response.data;
 };
 
+export const getAdminSignatureMonitoring = async (params = {}) => {
+    const query = buildQuery(params);
+    const response = await axios.get(
+        `${API_URL}/admin/signature-monitoring${query ? `?${query}` : ""}`,
+        { headers: authHeaders() }
+    );
+    return response.data;
+};
+
+export const recheckAdminDocumentSignatures = async (documentId) => {
+    const response = await axios.post(
+        `${API_URL}/admin/documents/${documentId}/recheck-signatures`,
+        {},
+        { headers: authHeaders() }
+    );
+    return response.data.data;
+};
+
 export const getAdminUsers = async () => {
     const response = await axios.get(`${API_URL}/admin/users`, {
         headers: authHeaders(),

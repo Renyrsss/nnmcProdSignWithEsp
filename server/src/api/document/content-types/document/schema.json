@@ -70,6 +70,9 @@
     "adminActionHistory": {
       "type": "json"
     },
+    "signatureMonitoring": {
+      "type": "json"
+    },
     "documentType": {
       "type": "relation",
       "relation": "manyToOne",

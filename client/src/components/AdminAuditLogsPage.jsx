@@ -26,6 +26,8 @@ const EVENT_LABELS = {
     document_signer_reassigned: "Подписант переназначен",
     document_deadline_updated: "Срок изменен",
     document_reminder_requested: "Напоминание",
+    document_signature_error: "Ошибка подписи",
+    document_signature_rechecked: "Проверка CMS",
     document_deleted: "Документ удален",
 };
 
@@ -40,6 +42,8 @@ const EVENT_STYLES = {
     document_signer_reassigned: "bg-indigo-100 text-indigo-800",
     document_deadline_updated: "bg-amber-100 text-amber-800",
     document_reminder_requested: "bg-yellow-100 text-yellow-800",
+    document_signature_error: "bg-rose-100 text-rose-800",
+    document_signature_rechecked: "bg-cyan-100 text-cyan-800",
     document_deleted: "bg-red-100 text-red-800",
 };
 
@@ -65,6 +69,11 @@ const formatMetadata = (metadata) => {
         visible.push(`Срок: ${metadata.signingDeadlineAt || "снят"}`);
     }
     if (metadata.signerName) visible.push(`Подписант: ${metadata.signerName}`);
+    if (metadata.message) visible.push(`Ошибка: ${metadata.message}`);
+    if (metadata.status) visible.push(`Проверка: ${metadata.status}`);
+    if (metadata.cmsFiles !== undefined) {
+        visible.push(`CMS: ${metadata.cmsFiles}/${metadata.signedEntries || 0}`);
+    }
 
     if (visible.length > 0) return visible.join("; ");
     return JSON.stringify(metadata);

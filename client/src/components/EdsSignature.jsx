@@ -47,6 +47,7 @@ export default function EdsSignature({
     file,
     fileUrl,
     onSignatureComplete,
+    onSignatureError,
     isCreatingDocument = false,
     isSigningDocument = false,
     signatureIndex = 0,
@@ -58,7 +59,7 @@ export default function EdsSignature({
 }) {
     const [status, setStatus] = useState("idle");
     const [message, setMessage] = useState("");
-    const [signedData, setSignedData] = useState(null);
+    const [, setSignedData] = useState(null);
     const [signedPdfBytes, setSignedPdfBytes] = useState(null);
     const [certInfo, setCertInfo] = useState(null);
     const [cmsBlob, setCmsBlob] = useState(null);
@@ -310,7 +311,7 @@ export default function EdsSignature({
 
             const pages = pdfDoc.getPages();
             const lastPage = pages[pages.length - 1];
-            const { width, height } = lastPage.getSize();
+            const { width } = lastPage.getSize();
 
             // QR данные
             const qrData = JSON.stringify({
@@ -539,6 +540,11 @@ export default function EdsSignature({
                         } else if (response.code === "500") {
                             setStatus("error");
                             setMessage("Ошибка: " + response.message);
+                            onSignatureError?.({
+                                message: response.message || "Ошибка NCALayer",
+                                code: response.code,
+                                source: "ncalayer",
+                            });
                             if (!keepNcaSession && wsRef.current) {
                                 wsRef.current.close();
                                 wsRef.current = null;
@@ -550,10 +556,15 @@ export default function EdsSignature({
                 };
 
                 ws.onerror = () => {
+                    const errorMessage =
+                        "Не удалось подключиться к NCALayer. Убедитесь, что NCALayer запущен.";
                     setStatus("error");
-                    setMessage(
-                        "Не удалось подключиться к NCALayer. Убедитесь, что NCALayer запущен."
-                    );
+                    setMessage(errorMessage);
+                    onSignatureError?.({
+                        message: errorMessage,
+                        code: "websocket_error",
+                        source: "ncalayer",
+                    });
                     if (!keepNcaSession) {
                         wsRef.current = null;
                     }
@@ -581,6 +592,11 @@ export default function EdsSignature({
         } catch (error) {
             setStatus("error");
             setMessage(error.message);
+            onSignatureError?.({
+                message: error.message || "Ошибка подписания",
+                code: "client_error",
+                source: "eds-signature",
+            });
         }
     }, [
         pdfData,
@@ -591,6 +607,7 @@ export default function EdsSignature({
         fontBoldBytes,
         keepNcaSession,
         sourceIndex,
+        onSignatureError,
     ]);
 
     const handleComplete = useCallback(async () => {

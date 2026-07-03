@@ -10,6 +10,7 @@ import AdminDocumentsPage from "./components/AdminDocumentsPage";
 import AdminUsersPage from "./components/AdminUsersPage";
 import AdminDocumentTypesPage from "./components/AdminDocumentTypesPage";
 import AdminAuditLogsPage from "./components/AdminAuditLogsPage";
+import AdminSignatureMonitoringPage from "./components/AdminSignatureMonitoringPage";
 import { ToastProvider } from "./components/Toast";
 import "./App.css";
 
@@ -59,6 +60,10 @@ function App() {
                             <Route
                                 path='admin/audit-logs'
                                 element={<AdminAuditLogsPage />}
+                            />
+                            <Route
+                                path='admin/signature-monitoring'
+                                element={<AdminSignatureMonitoringPage />}
                             />
                         </Route>
                     </Routes>
