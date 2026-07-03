@@ -38,6 +38,7 @@
         "security_settings_updated",
         "user_forced_logout",
         "security_suspicious_action",
+        "role_permissions_updated",
         "document_deleted"
       ],
       "required": true

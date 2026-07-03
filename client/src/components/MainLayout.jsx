@@ -159,6 +159,15 @@ export default function MainLayout() {
                 pathname.startsWith("/admin/users/"),
         },
         {
+            to: "/admin/role-permissions",
+            label: "Роли и права",
+            shortLabel: "Права",
+            icon: ShieldCheck,
+            isActive: () =>
+                pathname === "/admin/role-permissions" ||
+                pathname.startsWith("/admin/role-permissions/"),
+        },
+        {
             to: "/admin/document-types",
             label: "Типы документов",
             shortLabel: "Типы",

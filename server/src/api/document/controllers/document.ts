@@ -1261,6 +1261,188 @@ const toSafeSecuritySession = (user: any, settings: any) => {
     };
 };
 
+const ROLE_PERMISSION_KEYS = [
+    "createDocuments",
+    "signDocuments",
+    "viewDepartmentDocuments",
+    "viewAllDocuments",
+    "cancelDocuments",
+    "archiveDocuments",
+    "deleteDocuments",
+    "manageDictionaries",
+];
+
+const DEFAULT_ROLE_PERMISSIONS = {
+    app_admin: {
+        createDocuments: true,
+        signDocuments: true,
+        viewDepartmentDocuments: true,
+        viewAllDocuments: true,
+        cancelDocuments: true,
+        archiveDocuments: true,
+        deleteDocuments: true,
+        manageDictionaries: true,
+    },
+    authenticated: {
+        createDocuments: true,
+        signDocuments: true,
+        viewDepartmentDocuments: false,
+        viewAllDocuments: false,
+        cancelDocuments: false,
+        archiveDocuments: false,
+        deleteDocuments: true,
+        manageDictionaries: false,
+    },
+    app_manager: {
+        createDocuments: true,
+        signDocuments: true,
+        viewDepartmentDocuments: true,
+        viewAllDocuments: false,
+        cancelDocuments: true,
+        archiveDocuments: false,
+        deleteDocuments: true,
+        manageDictionaries: false,
+    },
+    app_observer: {
+        createDocuments: false,
+        signDocuments: false,
+        viewDepartmentDocuments: true,
+        viewAllDocuments: false,
+        cancelDocuments: false,
+        archiveDocuments: false,
+        deleteDocuments: false,
+        manageDictionaries: false,
+    },
+};
+
+const getRolePermissionKey = (role: any) =>
+    String(role?.type || role?.name || "authenticated").toLowerCase();
+
+const normalizePermissionRow = (value: any, fallback: any) => {
+    const source = value && typeof value === "object" ? value : {};
+    return ROLE_PERMISSION_KEYS.reduce((acc: any, key) => {
+        acc[key] = Boolean(source[key] ?? fallback?.[key] ?? false);
+        return acc;
+    }, {});
+};
+
+const normalizeRolePermissionMatrix = (matrix: any, roles: any[] = []) => {
+    const source = matrix && typeof matrix === "object" ? matrix : {};
+    const normalized: any = {};
+
+    for (const [roleKey, fallback] of Object.entries(DEFAULT_ROLE_PERMISSIONS)) {
+        normalized[roleKey] = normalizePermissionRow(source[roleKey], fallback);
+    }
+
+    for (const role of roles) {
+        const key = getRolePermissionKey(role);
+        if (!normalized[key]) {
+            normalized[key] = normalizePermissionRow(
+                source[key],
+                DEFAULT_ROLE_PERMISSIONS.authenticated
+            );
+        }
+    }
+
+    normalized.app_admin = { ...DEFAULT_ROLE_PERMISSIONS.app_admin };
+    return normalized;
+};
+
+const getOrCreateRolePermissionSettings = async (
+    strapi: any,
+    roles: any[] = []
+) => {
+    const existing = await strapi.db
+        .query("api::role-permission-setting.role-permission-setting")
+        .findOne({ orderBy: { createdAt: "asc" } });
+
+    if (existing) {
+        return {
+            ...existing,
+            matrix: normalizeRolePermissionMatrix(existing.matrix, roles),
+        };
+    }
+
+    return strapi.db
+        .query("api::role-permission-setting.role-permission-setting")
+        .create({
+            data: {
+                matrix: normalizeRolePermissionMatrix({}, roles),
+            },
+        });
+};
+
+const getUserRolePermissions = async (strapi: any, user: any) => {
+    if (isAppAdminRole(user?.role)) return DEFAULT_ROLE_PERMISSIONS.app_admin;
+
+    const settings = await getOrCreateRolePermissionSettings(strapi);
+    const roleKey = getRolePermissionKey(user?.role);
+    return normalizePermissionRow(
+        settings.matrix?.[roleKey],
+        DEFAULT_ROLE_PERMISSIONS.authenticated
+    );
+};
+
+const hasUserRolePermission = async (strapi: any, user: any, permission: string) => {
+    if (isAppAdminRole(user?.role)) return true;
+    const permissions = await getUserRolePermissions(strapi, user);
+    return Boolean(permissions?.[permission]);
+};
+
+const isDocumentInUserDepartment = (document: any, user: any) => {
+    const userDepartmentId = Number(user?.department?.id);
+    const creatorDepartmentId = Number(document?.creator?.department?.id);
+    return (
+        Number.isFinite(userDepartmentId) &&
+        Number.isFinite(creatorDepartmentId) &&
+        userDepartmentId === creatorDepartmentId
+    );
+};
+
+const getDocumentPermissionFilters = async (strapi: any, fullUser: any) => {
+    const permissions = await getUserRolePermissions(strapi, fullUser);
+    if (permissions.viewAllDocuments) return undefined;
+
+    const filters: any[] = [
+        { creator: { id: fullUser.id } },
+        { assigned_users: { id: fullUser.id } },
+    ];
+
+    if (permissions.viewDepartmentDocuments && fullUser.department?.id) {
+        filters.push({ creator: { department: { id: fullUser.department.id } } });
+    }
+
+    return { $or: filters };
+};
+
+const canReadDocumentWithPermissions = async (
+    strapi: any,
+    document: any,
+    fullUser: any
+) => {
+    if (isAppAdminRole(fullUser?.role)) return true;
+    const isCreator = Number(document.creator?.id) === Number(fullUser.id);
+    const isAssigned = (document.assigned_users as any[])?.some(
+        (assignedUser) => Number(assignedUser.id) === Number(fullUser.id)
+    );
+    if (isCreator || isAssigned) return true;
+
+    const permissions = await getUserRolePermissions(strapi, fullUser);
+    if (permissions.viewAllDocuments) return true;
+    return (
+        permissions.viewDepartmentDocuments &&
+        isDocumentInUserDepartment(document, fullUser)
+    );
+};
+
+const isSigningUpdate = (updateData: any) =>
+    Boolean(
+        updateData?.signatureHistory ||
+            updateData?.signers ||
+            updateData?.currentFile ||
+            updateData?.status === "completed"
+    );
+
 const NOTIFICATION_EVENTS = [
     "document_created",
     "document_assigned",
@@ -1838,7 +2020,10 @@ const findDocumentForAccess = async (strapi: any, id: string | number) => {
             .documents("api::document.document")
             .findOne({
                 documentId: String(id),
-                populate: ["creator", "assigned_users"],
+                populate: {
+                    creator: { populate: ["department"] },
+                    assigned_users: true,
+                },
             });
         if (document) return document;
     } catch {
@@ -1852,7 +2037,10 @@ const findDocumentForAccess = async (strapi: any, id: string | number) => {
         .documents("api::document.document")
         .findMany({
             filters: { id: numericId },
-            populate: ["creator", "assigned_users"],
+            populate: {
+                creator: { populate: ["department"] },
+                assigned_users: true,
+            },
             limit: 1,
         } as any);
 
@@ -1890,7 +2078,10 @@ export default factories.createCoreController(
 
             const fullUser = await getAuthenticatedUser(strapi, user.id);
             const isAdmin = isAppAdminRole(fullUser?.role);
-            if (!canReadOrUpdateDocument(document, user, isAdmin)) {
+            if (
+                !isAdmin &&
+                !(await canReadDocumentWithPermissions(strapi, document, fullUser))
+            ) {
                 return ctx.forbidden("Нет доступа к этому документу");
             }
 
@@ -1913,6 +2104,10 @@ export default factories.createCoreController(
         async create(ctx) {
             const user = ctx.state.user;
             if (!user) return ctx.unauthorized("Необходима авторизация");
+            const fullUser = await getAuthenticatedUser(strapi, user.id);
+            if (!(await hasUserRolePermission(strapi, fullUser, "createDocuments"))) {
+                return ctx.forbidden("Ваша роль не может создавать документы");
+            }
 
             ctx.request.body = {
                 ...ctx.request.body,
@@ -1959,7 +2154,10 @@ export default factories.createCoreController(
 
             const fullUser = await getAuthenticatedUser(strapi, user.id);
             const isAdmin = isAppAdminRole(fullUser?.role);
-            if (!canReadOrUpdateDocument(document, user, isAdmin)) {
+            if (
+                !isAdmin &&
+                !(await canReadDocumentWithPermissions(strapi, document, fullUser))
+            ) {
                 return ctx.forbidden("Нет доступа к этому документу");
             }
 
@@ -1968,6 +2166,12 @@ export default factories.createCoreController(
             );
             const previousStatus = document.status;
             const updateData = ctx.request.body?.data || {};
+            if (
+                isSigningUpdate(updateData) &&
+                !(await hasUserRolePermission(strapi, fullUser, "signDocuments"))
+            ) {
+                return ctx.forbidden("Ваша роль не может подписывать документы");
+            }
 
             const response = await super.update(ctx);
             const updated = await getDocumentByNumericOrDocumentId(
@@ -2011,8 +2215,16 @@ export default factories.createCoreController(
             const fullUser = await getAuthenticatedUser(strapi, user.id);
             const isAdmin = isAppAdminRole(fullUser?.role);
             const isCreator = Number(document.creator?.id) === Number(user.id);
-            if (!isAdmin && !isCreator) {
-                return ctx.forbidden("Удалить документ может только автор");
+            if (
+                !isAdmin &&
+                (!isCreator ||
+                    !(await hasUserRolePermission(
+                        strapi,
+                        fullUser,
+                        "deleteDocuments"
+                    )))
+            ) {
+                return ctx.forbidden("Ваша роль не может удалять этот документ");
             }
 
             const response = await super.delete(ctx);
@@ -2120,6 +2332,11 @@ export default factories.createCoreController(
         async findMine(ctx) {
             const user = ctx.state.user;
             if (!user) return ctx.unauthorized("Необходима авторизация");
+            const fullUser = await getAuthenticatedUser(strapi, user.id);
+            const permissionFilters = await getDocumentPermissionFilters(
+                strapi,
+                fullUser
+            );
 
             // Строгий whitelist: невалидное значение — 400, а не молчаливый
             // fallback. Это защищает от опечаток и от попыток передать мусор.
@@ -2137,12 +2354,7 @@ export default factories.createCoreController(
             } else if (role === "assigned") {
                 filters = { assigned_users: { id: user.id } };
             } else {
-                filters = {
-                    $or: [
-                        { creator: { id: user.id } },
-                        { assigned_users: { id: user.id } },
-                    ],
-                };
+                filters = permissionFilters;
             }
 
             // КРИТИЧНО: для creator явно перечисляем безопасные поля.
@@ -2641,6 +2853,92 @@ export default factories.createCoreController(
                     updated,
                     await getOrCreateSecuritySettings(strapi)
                 ),
+            });
+        },
+
+        /**
+         * GET /api/admin/role-permissions
+         */
+        async getAdminRolePermissions(ctx) {
+            const admin = await requireAppAdmin(ctx, strapi);
+            if (!admin) return;
+
+            const roles = await getAssignableRoles(strapi);
+            const settings = await getOrCreateRolePermissionSettings(strapi, roles);
+            const matrix = normalizeRolePermissionMatrix(settings.matrix, roles);
+
+            return ctx.send({
+                data: {
+                    permissionKeys: ROLE_PERMISSION_KEYS,
+                    permissions: {
+                        createDocuments: "Создание документов",
+                        signDocuments: "Подписание документов",
+                        viewDepartmentDocuments: "Просмотр документов отдела",
+                        viewAllDocuments: "Просмотр всех документов",
+                        cancelDocuments: "Отмена документов",
+                        archiveDocuments: "Архивация документов",
+                        deleteDocuments: "Удаление документов",
+                        manageDictionaries: "Управление справочниками",
+                    },
+                    roles: roles.map((role: any) => ({
+                        ...role,
+                        key: getRolePermissionKey(role),
+                        isProtectedAdmin: isAppAdminRole(role),
+                    })),
+                    matrix,
+                    updatedAt: settings.updatedAt || null,
+                },
+            });
+        },
+
+        /**
+         * PUT /api/admin/role-permissions
+         */
+        async updateAdminRolePermissions(ctx) {
+            const admin = await requireAppAdmin(ctx, strapi);
+            if (!admin) return;
+
+            const roles = await getAssignableRoles(strapi);
+            const matrix = normalizeRolePermissionMatrix(
+                ctx.request.body?.matrix || {},
+                roles
+            );
+            const existing = await strapi.db
+                .query("api::role-permission-setting.role-permission-setting")
+                .findOne({ orderBy: { createdAt: "asc" } });
+
+            const saved = existing
+                ? await strapi.db
+                      .query("api::role-permission-setting.role-permission-setting")
+                      .update({
+                          where: { id: existing.id },
+                          data: {
+                              matrix,
+                              updatedByUser: admin.id,
+                          },
+                      })
+                : await strapi.db
+                      .query("api::role-permission-setting.role-permission-setting")
+                      .create({
+                          data: {
+                              matrix,
+                              updatedByUser: admin.id,
+                          },
+                      });
+
+            await createAuditLog(strapi, ctx, "role_permissions_updated", {
+                actor: admin,
+                metadata: {
+                    roleKeys: Object.keys(matrix),
+                    permissionKeys: ROLE_PERMISSION_KEYS,
+                },
+            });
+
+            return ctx.send({
+                data: {
+                    matrix: normalizeRolePermissionMatrix(saved.matrix, roles),
+                    updatedAt: saved.updatedAt || null,
+                },
             });
         },
 

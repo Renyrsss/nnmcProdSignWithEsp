@@ -479,6 +479,7 @@ export interface ApiAuditLogAuditLog extends Struct.CollectionTypeSchema {
         'security_settings_updated',
         'user_forced_logout',
         'security_suspicious_action',
+        'role_permissions_updated',
         'document_deleted',
       ]
     > &
@@ -766,6 +767,40 @@ export interface ApiPlatformSettingPlatformSetting
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
       Schema.Attribute.Private;
+  };
+}
+
+export interface ApiRolePermissionSettingRolePermissionSetting
+  extends Struct.CollectionTypeSchema {
+  collectionName: 'role_permission_settings';
+  info: {
+    description: '\u041C\u0430\u0442\u0440\u0438\u0446\u0430 \u043F\u0440\u0438\u043A\u043B\u0430\u0434\u043D\u044B\u0445 \u043F\u0440\u0430\u0432 \u043F\u043E \u0440\u043E\u043B\u044F\u043C';
+    displayName: 'Role Permission Setting';
+    pluralName: 'role-permission-settings';
+    singularName: 'role-permission-setting';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  attributes: {
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<
+      'oneToMany',
+      'api::role-permission-setting.role-permission-setting'
+    > &
+      Schema.Attribute.Private;
+    matrix: Schema.Attribute.JSON;
+    publishedAt: Schema.Attribute.DateTime;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+    updatedByUser: Schema.Attribute.Relation<
+      'manyToOne',
+      'plugin::users-permissions.user'
+    >;
   };
 }
 
@@ -1370,6 +1405,7 @@ declare module '@strapi/strapi' {
       'api::document.document': ApiDocumentDocument;
       'api::notification-template.notification-template': ApiNotificationTemplateNotificationTemplate;
       'api::platform-setting.platform-setting': ApiPlatformSettingPlatformSetting;
+      'api::role-permission-setting.role-permission-setting': ApiRolePermissionSettingRolePermissionSetting;
       'api::security-setting.security-setting': ApiSecuritySettingSecuritySetting;
       'api::subdivision.subdivision': ApiSubdivisionSubdivision;
       'plugin::content-releases.release': PluginContentReleasesRelease;

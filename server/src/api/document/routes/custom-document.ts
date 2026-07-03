@@ -85,6 +85,18 @@ export default {
             config: { policies: [], middlewares: [] },
         },
         {
+            method: "GET",
+            path: "/admin/role-permissions",
+            handler: "api::document.document.getAdminRolePermissions",
+            config: { policies: [], middlewares: [] },
+        },
+        {
+            method: "PUT",
+            path: "/admin/role-permissions",
+            handler: "api::document.document.updateAdminRolePermissions",
+            config: { policies: [], middlewares: [] },
+        },
+        {
             method: "POST",
             path: "/admin/documents/:id/archive",
             handler: "api::document.document.archiveAdminDocument",

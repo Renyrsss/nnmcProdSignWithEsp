@@ -16,6 +16,7 @@ import AdminNotificationsPage from "./components/AdminNotificationsPage";
 import AdminReportsPage from "./components/AdminReportsPage";
 import AdminArchivePage from "./components/AdminArchivePage";
 import AdminSecurityPage from "./components/AdminSecurityPage";
+import AdminRolePermissionsPage from "./components/AdminRolePermissionsPage";
 import { ToastProvider } from "./components/Toast";
 import "./App.css";
 
@@ -57,6 +58,10 @@ function App() {
                             <Route
                                 path='admin/users'
                                 element={<AdminUsersPage />}
+                            />
+                            <Route
+                                path='admin/role-permissions'
+                                element={<AdminRolePermissionsPage />}
                             />
                             <Route
                                 path='admin/document-types'

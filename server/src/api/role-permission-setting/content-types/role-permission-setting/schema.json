@@ -1,0 +1,24 @@
+{
+  "kind": "collectionType",
+  "collectionName": "role_permission_settings",
+  "info": {
+    "singularName": "role-permission-setting",
+    "pluralName": "role-permission-settings",
+    "displayName": "Role Permission Setting",
+    "description": "Матрица прикладных прав по ролям"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "matrix": {
+      "type": "json"
+    },
+    "updatedByUser": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "plugin::users-permissions.user"
+    }
+  }
+}

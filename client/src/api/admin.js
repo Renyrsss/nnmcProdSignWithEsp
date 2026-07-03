@@ -108,6 +108,22 @@ export const forceLogoutAdminUser = async (userId, reason = "") => {
     return response.data.data;
 };
 
+export const getAdminRolePermissions = async () => {
+    const response = await axios.get(`${API_URL}/admin/role-permissions`, {
+        headers: authHeaders(),
+    });
+    return response.data.data;
+};
+
+export const updateAdminRolePermissions = async (matrix) => {
+    const response = await axios.put(
+        `${API_URL}/admin/role-permissions`,
+        { matrix },
+        { headers: authHeaders() }
+    );
+    return response.data.data;
+};
+
 export const getAdminDocument = async (id) => {
     const response = await axios.get(`${API_URL}/admin/documents/${id}`, {
         headers: authHeaders(),

@@ -76,6 +76,8 @@ const ADMIN_APP_ACTIONS = [
     "api::document.document.getAdminSecurity",
     "api::document.document.updateAdminSecuritySettings",
     "api::document.document.forceLogoutAdminUser",
+    "api::document.document.getAdminRolePermissions",
+    "api::document.document.updateAdminRolePermissions",
     "api::document.document.createAdminNotificationTemplate",
     "api::document.document.updateAdminNotificationTemplate",
     "api::document.document.deleteAdminNotificationTemplate",
