@@ -483,6 +483,9 @@ export interface ApiAuditLogAuditLog extends Struct.CollectionTypeSchema {
         'user_created',
         'user_updated',
         'user_password_changed',
+        'user_password_reset_requested',
+        'user_password_reset_completed',
+        'user_logout',
         'user_status_updated',
         'department_created',
         'department_updated',
@@ -1378,6 +1381,12 @@ export interface PluginUsersPermissionsUser
       Schema.Attribute.SetMinMaxLength<{
         minLength: 6;
       }>;
+    passwordResetExpiresAt: Schema.Attribute.DateTime &
+      Schema.Attribute.Private;
+    passwordResetRequestedAt: Schema.Attribute.DateTime &
+      Schema.Attribute.Private;
+    passwordResetTokenHash: Schema.Attribute.String & Schema.Attribute.Private;
+    phone: Schema.Attribute.String & Schema.Attribute.Private;
     provider: Schema.Attribute.String;
     publishedAt: Schema.Attribute.DateTime;
     resetPasswordToken: Schema.Attribute.String & Schema.Attribute.Private;

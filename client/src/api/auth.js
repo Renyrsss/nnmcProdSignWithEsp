@@ -5,6 +5,9 @@ const API_URL = `${import.meta.env.VITE_API_BASE}/api`;
 const storeUser = (user) => {
     if (user) {
         localStorage.setItem("user", JSON.stringify(user));
+        window.dispatchEvent(
+            new CustomEvent("auth:user-updated", { detail: user })
+        );
     }
 };
 
@@ -43,6 +46,44 @@ export const login = async (identifier, password) => {
     }
 };
 
+export const getPublicPasswordPolicy = async () => {
+    try {
+        const response = await axios.get(`${API_URL}/auth/password/policy`);
+        return response.data?.data || {};
+    } catch (error) {
+        throw error.response?.data?.error || error;
+    }
+};
+
+export const requestPasswordReset = async (email) => {
+    try {
+        const response = await axios.post(`${API_URL}/auth/password/forgot`, {
+            email,
+        });
+        return response.data?.data || {};
+    } catch (error) {
+        throw error.response?.data?.error || error;
+    }
+};
+
+export const resetPasswordWithToken = async (
+    token,
+    password,
+    passwordConfirmation
+) => {
+    try {
+        const response = await axios.post(`${API_URL}/auth/password/reset`, {
+            token,
+            password,
+            passwordConfirmation,
+        });
+        logout();
+        return response.data?.data || {};
+    } catch (error) {
+        throw error.response?.data?.error || error;
+    }
+};
+
 export const register = async (username, email, password) => {
     try {
         const response = await axios.post(`${API_URL}/auth/local/register`, {
@@ -66,6 +107,20 @@ export const register = async (username, email, password) => {
 export const logout = () => {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
+};
+
+export const logoutCurrentUser = async () => {
+    try {
+        await axios.post(
+            `${API_URL}/profile/logout`,
+            {},
+            { headers: authHeaders() }
+        );
+    } catch (error) {
+        console.warn("Не удалось зарегистрировать выход на сервере:", error);
+    } finally {
+        logout();
+    }
 };
 
 export const getCurrentUser = () => {
@@ -148,6 +203,55 @@ export const recordSecurityHeartbeat = async () => {
     } catch (error) {
         if ([401, 403].includes(error.response?.status)) logout();
         throw error;
+    }
+};
+
+export const changeOwnPassword = async (
+    currentPassword,
+    password,
+    passwordConfirmation
+) => {
+    try {
+        const response = await axios.post(
+            `${API_URL}/profile/password`,
+            { currentPassword, password, passwordConfirmation },
+            { headers: authHeaders() }
+        );
+        const result = response.data?.data || {};
+
+        if (result.jwt) {
+            localStorage.setItem("token", result.jwt);
+        }
+
+        const user = getCurrentUser();
+        if (user) {
+            storeUser({
+                ...user,
+                sessionVersion: result.sessionVersion || user.sessionVersion,
+                forcedLogoutAt: result.forcedLogoutAt || user.forcedLogoutAt,
+            });
+        }
+
+        return result;
+    } catch (error) {
+        if ([401, 403].includes(error.response?.status)) logout();
+        throw error.response?.data?.error || error;
+    }
+};
+
+export const updateOwnProfile = async (fullName, phone) => {
+    try {
+        const response = await axios.put(
+            `${API_URL}/profile`,
+            { fullName, phone },
+            { headers: authHeaders() }
+        );
+        const updatedUser = response.data?.data;
+        if (updatedUser) storeUser(updatedUser);
+        return updatedUser;
+    } catch (error) {
+        if ([401, 403].includes(error.response?.status)) logout();
+        throw error.response?.data?.error || error;
     }
 };
 

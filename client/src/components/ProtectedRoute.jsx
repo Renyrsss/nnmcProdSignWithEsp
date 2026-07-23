@@ -1,19 +1,13 @@
-import React, { useState } from "react";
-import { isAuthenticated, getCurrentUser } from "../api/auth";
-import Login from "./Login";
+import React from "react";
+import { Navigate, Outlet, useLocation } from "react-router-dom";
+import { isAuthenticated } from "../api/auth";
 
-export default function ProtectedRoute({ children }) {
-    const [authenticated, setAuthenticated] = useState(isAuthenticated());
-    const [user, setUser] = useState(getCurrentUser());
+export default function ProtectedRoute() {
+    const location = useLocation();
 
-    const handleLoginSuccess = () => {
-        setAuthenticated(true);
-        setUser(getCurrentUser());
-    };
-
-    if (!authenticated) {
-        return <Login onLoginSuccess={handleLoginSuccess} />;
+    if (!isAuthenticated()) {
+        return <Navigate to='/login' replace state={{ from: location }} />;
     }
 
-    return <>{children}</>;
+    return <Outlet />;
 }

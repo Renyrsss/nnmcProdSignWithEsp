@@ -17,6 +17,10 @@ import AdminReportsPage from "./components/AdminReportsPage";
 import AdminArchivePage from "./components/AdminArchivePage";
 import AdminSecurityPage from "./components/AdminSecurityPage";
 import AdminRolePermissionsPage from "./components/AdminRolePermissionsPage";
+import ProfilePage from "./components/ProfilePage";
+import Login from "./components/Login";
+import ForgotPasswordPage from "./components/ForgotPasswordPage";
+import ResetPasswordPage from "./components/ResetPasswordPage";
 import { ToastProvider } from "./components/Toast";
 import "./App.css";
 
@@ -24,8 +28,18 @@ function App() {
     return (
         <ToastProvider>
             <BrowserRouter>
-                <ProtectedRoute>
-                    <Routes>
+                <Routes>
+                    <Route path='/login' element={<Login />} />
+                    <Route
+                        path='/forgot-password'
+                        element={<ForgotPasswordPage />}
+                    />
+                    <Route
+                        path='/reset-password'
+                        element={<ResetPasswordPage />}
+                    />
+
+                    <Route element={<ProtectedRoute />}>
                         <Route path='/' element={<MainLayout />}>
                             <Route
                                 index
@@ -51,6 +65,7 @@ function App() {
                                 path='documents/batch-sign'
                                 element={<BatchSignPage />}
                             />
+                            <Route path='profile' element={<ProfilePage />} />
                             <Route
                                 path='admin/documents'
                                 element={<AdminDocumentsPage />}
@@ -96,11 +111,12 @@ function App() {
                                 element={<AdminSecurityPage />}
                             />
                         </Route>
-                    </Routes>
-                </ProtectedRoute>
+                    </Route>
+
+                    <Route path='*' element={<Navigate to='/' replace />} />
+                </Routes>
             </BrowserRouter>
         </ToastProvider>
     );
 }
-// hello owrd?
 export default App;

@@ -2,8 +2,55 @@ export default {
     routes: [
         {
             method: "GET",
+            path: "/auth/password/policy",
+            handler: "api::document.document.getPublicPasswordPolicy",
+            config: { auth: false, policies: [], middlewares: [] },
+        },
+        {
+            method: "POST",
+            path: "/auth/password/forgot",
+            handler: "api::document.document.requestPasswordReset",
+            config: {
+                auth: false,
+                policies: [],
+                middlewares: ["plugin::users-permissions.rateLimit"],
+            },
+        },
+        {
+            method: "POST",
+            path: "/auth/password/reset",
+            handler: "api::document.document.resetPasswordWithToken",
+            config: {
+                auth: false,
+                policies: [],
+                middlewares: ["plugin::users-permissions.rateLimit"],
+            },
+        },
+        {
+            method: "GET",
             path: "/admin/me",
             handler: "api::document.document.getAppMe",
+            config: { policies: [], middlewares: [] },
+        },
+        {
+            method: "POST",
+            path: "/profile/password",
+            handler: "api::document.document.changeOwnPassword",
+            config: {
+                policies: [],
+                middlewares: ["plugin::users-permissions.rateLimit"],
+            },
+        },
+        {
+            method: "PUT",
+            path: "/profile",
+            handler: "api::document.document.updateOwnProfile",
+            config: { policies: [], middlewares: [] },
+        },
+        {
+            method: "POST",
+            path: "/profile/logout",
+            handler: "api::document.document.logoutOwnSession",
             config: { policies: [], middlewares: [] },
         },
         {

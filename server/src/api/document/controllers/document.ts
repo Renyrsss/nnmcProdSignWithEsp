@@ -1,6 +1,7 @@
 import { factories } from "@strapi/strapi";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { createHash, randomBytes as cryptoRandomBytes } from "crypto";
 
 const APP_ADMIN_ROLE_TYPE = "app_admin";
 const APP_ADMIN_ROLE_NAMES = ["admin", "administrator", "администратор"];
@@ -24,6 +25,21 @@ const isAppAdminRole = (role: any): boolean => {
 
 const cleanString = (value: any) => String(value || "").trim();
 
+const normalizePhoneNumber = (value: any) => {
+    const raw = cleanString(value);
+    if (!raw) return "";
+
+    let digits = raw.replace(/\D/g, "");
+    if (digits.length === 11 && digits.startsWith("8")) {
+        digits = `7${digits.slice(1)}`;
+    } else if (digits.length === 10) {
+        digits = `7${digits}`;
+    }
+
+    if (digits.length < 11 || digits.length > 15) return null;
+    return `+${digits}`;
+};
+
 const normalizeOptionalId = (value: any) => {
     if (value === undefined || value === null || value === "" || value === "none") {
         return null;
@@ -37,6 +53,89 @@ const isEmptyRelationId = (value: any) =>
     value === undefined || value === null || value === "" || value === "none";
 
 const isEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+
+const getPasswordResetTtlMinutes = () => {
+    const configured = Number.parseInt(
+        String(process.env.PASSWORD_RESET_TTL_MINUTES || "30"),
+        10
+    );
+    if (!Number.isFinite(configured)) return 30;
+    return Math.min(120, Math.max(5, configured));
+};
+
+const getPasswordResetCooldownSeconds = () => {
+    const configured = Number.parseInt(
+        String(process.env.PASSWORD_RESET_COOLDOWN_SECONDS || "60"),
+        10
+    );
+    if (!Number.isFinite(configured)) return 60;
+    return Math.min(600, Math.max(30, configured));
+};
+
+const hashPasswordResetToken = (token: string) =>
+    createHash("sha256").update(token).digest("hex");
+
+const escapeHtml = (value: any) =>
+    String(value || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+
+const buildPasswordResetUrl = (token: string) => {
+    const clientUrl = String(
+        process.env.CLIENT_URL || process.env.FRONTEND_URL || "http://localhost:5173"
+    ).replace(/\/$/, "");
+    const url = new URL(`${clientUrl}/reset-password`);
+    url.searchParams.set("token", token);
+    return url.toString();
+};
+
+const sendPasswordResetEmail = async (
+    strapi: any,
+    user: any,
+    token: string
+) => {
+    const resetUrl = buildPasswordResetUrl(token);
+    const ttlMinutes = getPasswordResetTtlMinutes();
+    const displayName = escapeHtml(user.fullName || user.username || "пользователь");
+    const subject = "Восстановление пароля — Электронная подпись";
+    const text = [
+        `Здравствуйте, ${user.fullName || user.username || "пользователь"}!`,
+        "",
+        "Мы получили запрос на восстановление пароля.",
+        `Установить новый пароль: ${resetUrl}`,
+        "",
+        `Ссылка действует ${ttlMinutes} минут и может быть использована только один раз.`,
+        "Если вы не запрашивали восстановление, просто проигнорируйте это письмо.",
+    ].join("\n");
+    const html = `
+        <!doctype html>
+        <html lang="ru">
+        <head><meta charset="utf-8"><meta name="viewport" content="width=device-width"></head>
+        <body style="margin:0;background:#f4f6fb;font-family:Arial,sans-serif;color:#172033">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f6fb;padding:32px 16px">
+            <tr><td align="center">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#fff;border:1px solid #e4e8f0;border-radius:20px;overflow:hidden">
+                <tr><td style="padding:32px">
+                  <div style="display:inline-block;padding:8px 12px;border-radius:10px;background:#eef2ff;color:#4f46e5;font-size:13px;font-weight:700">ЭЛЕКТРОННАЯ ПОДПИСЬ</div>
+                  <h1 style="margin:24px 0 12px;font-size:26px;line-height:1.25">Восстановление пароля</h1>
+                  <p style="margin:0 0 12px;color:#596579;line-height:1.6">Здравствуйте, ${displayName}!</p>
+                  <p style="margin:0 0 24px;color:#596579;line-height:1.6">Мы получили запрос на восстановление пароля вашей учётной записи.</p>
+                  <a href="${escapeHtml(resetUrl)}" style="display:inline-block;padding:14px 22px;border-radius:12px;background:#4f46e5;color:#fff;text-decoration:none;font-weight:700">Установить новый пароль</a>
+                  <p style="margin:24px 0 0;color:#7b8495;font-size:13px;line-height:1.6">Ссылка действует ${ttlMinutes} минут и может быть использована только один раз. Если вы не отправляли запрос, ничего делать не нужно.</p>
+                </td></tr>
+              </table>
+            </td></tr>
+          </table>
+        </body>
+        </html>`;
+
+    const emailService = strapi.plugin("email")?.service("email");
+    if (!emailService) throw new Error("Email service is not configured");
+    await emailService.send({ to: user.email, subject, text, html });
+};
 
 const getBearerToken = (ctx: any) => {
     const header = String(ctx.request.headers.authorization || "");
@@ -88,6 +187,7 @@ const toSafeUser = (user: any) => ({
     username: user.username,
     email: user.email,
     fullName: user.fullName,
+    phone: user.phone || "",
     confirmed: user.confirmed,
     blocked: user.blocked,
     createdAt: user.createdAt,
@@ -1242,6 +1342,9 @@ const normalizeSecuritySettingsPayload = (body: any) => {
 
 const validatePasswordAgainstPolicy = (password: string, settings: any) => {
     const policy = toSafeSecuritySettings(settings).passwordPolicy;
+    if (password.length > 128) {
+        return "Пароль не должен превышать 128 символов";
+    }
     if (password.length < policy.minLength) {
         return `Пароль должен быть не короче ${policy.minLength} символов`;
     }
@@ -2248,6 +2351,211 @@ const countSignedHistory = (history: any) =>
 export default factories.createCoreController(
     "api::document.document",
     ({ strapi }) => ({
+        /**
+         * GET /api/auth/password/policy
+         *
+         * Public, non-sensitive part of the organization's password policy so
+         * the reset form can give the user immediate, accurate feedback.
+         */
+        async getPublicPasswordPolicy(ctx) {
+            const securitySettings = await getOrCreateSecuritySettings(strapi);
+            return ctx.send({
+                data: {
+                    ...securitySettings.passwordPolicy,
+                    resetLinkTtlMinutes: getPasswordResetTtlMinutes(),
+                },
+            });
+        },
+
+        /**
+         * POST /api/auth/password/forgot
+         *
+         * Always returns the same response for existing and unknown accounts.
+         * Only a SHA-256 hash of the one-time token is persisted.
+         */
+        async requestPasswordReset(ctx) {
+            const email = cleanString(ctx.request.body?.email).toLowerCase();
+            if (!email || email.length > 254 || !isEmail(email)) {
+                return ctx.badRequest("Укажите корректный email");
+            }
+
+            const acceptedResponse = {
+                data: {
+                    accepted: true,
+                    message:
+                        "Если аккаунт с таким email существует, письмо уже отправлено.",
+                },
+            };
+
+            const user = await strapi.db
+                .query("plugin::users-permissions.user")
+                .findOne({ where: { email: { $eqi: email } } });
+
+            if (!user || user.blocked) return ctx.send(acceptedResponse);
+
+            const lastRequestedAt = Date.parse(
+                String(user.passwordResetRequestedAt || "")
+            );
+            const cooldownMs = getPasswordResetCooldownSeconds() * 1000;
+            if (
+                Number.isFinite(lastRequestedAt) &&
+                Date.now() - lastRequestedAt < cooldownMs
+            ) {
+                return ctx.send(acceptedResponse);
+            }
+
+            const token = cryptoRandomBytes(32).toString("base64url");
+            const tokenHash = hashPasswordResetToken(token);
+            const requestedAt = new Date().toISOString();
+            const expiresAt = new Date(
+                Date.now() + getPasswordResetTtlMinutes() * 60_000
+            ).toISOString();
+
+            await strapi
+                .plugin("users-permissions")
+                .service("user")
+                .edit(user.id, {
+                    passwordResetTokenHash: tokenHash,
+                    passwordResetRequestedAt: requestedAt,
+                    passwordResetExpiresAt: expiresAt,
+                    resetPasswordToken: null,
+                });
+
+            try {
+                await sendPasswordResetEmail(strapi, user, token);
+                await createAuditLog(
+                    strapi,
+                    ctx,
+                    "user_password_reset_requested",
+                    {
+                        actor: null,
+                        targetUser: user,
+                        metadata: {
+                            selfService: true,
+                            expiresAt,
+                        },
+                    }
+                );
+            } catch (error) {
+                await strapi.db
+                    .query("plugin::users-permissions.user")
+                    .update({
+                        where: {
+                            id: user.id,
+                            passwordResetTokenHash: tokenHash,
+                        },
+                        data: {
+                            passwordResetTokenHash: null,
+                            passwordResetRequestedAt: null,
+                            passwordResetExpiresAt: null,
+                        },
+                    });
+                strapi.log.error(
+                    `[password-reset] письмо для user id=${user.id} не отправлено: ${error}`
+                );
+            }
+
+            return ctx.send(acceptedResponse);
+        },
+
+        /**
+         * POST /api/auth/password/reset
+         *
+         * Consumes a short-lived token once and invalidates every previous app
+         * session by incrementing the user's sessionVersion.
+         */
+        async resetPasswordWithToken(ctx) {
+            const token = cleanString(ctx.request.body?.token);
+            const password = String(ctx.request.body?.password || "");
+            const passwordConfirmation = String(
+                ctx.request.body?.passwordConfirmation || ""
+            );
+
+            if (!token || token.length < 32 || token.length > 256) {
+                return ctx.badRequest("Ссылка недействительна или устарела");
+            }
+            if (!password || !passwordConfirmation) {
+                return ctx.badRequest("Заполните оба поля пароля");
+            }
+            if (password !== passwordConfirmation) {
+                return ctx.badRequest("Пароли не совпадают");
+            }
+
+            const tokenHash = hashPasswordResetToken(token);
+            const user = await strapi.db
+                .query("plugin::users-permissions.user")
+                .findOne({
+                    where: {
+                        passwordResetTokenHash: tokenHash,
+                        passwordResetExpiresAt: { $gt: new Date().toISOString() },
+                        blocked: false,
+                    },
+                });
+
+            if (!user) {
+                return ctx.badRequest("Ссылка недействительна или устарела");
+            }
+
+            const securitySettings = await getOrCreateSecuritySettings(strapi);
+            const passwordError = validatePasswordAgainstPolicy(
+                password,
+                securitySettings
+            );
+            if (passwordError) return ctx.badRequest(passwordError);
+
+            const isSamePassword = await strapi
+                .plugin("users-permissions")
+                .service("user")
+                .validatePassword(password, user.password);
+            if (isSamePassword) {
+                return ctx.badRequest("Новый пароль должен отличаться от текущего");
+            }
+
+            const nextSessionVersion = Number(user.sessionVersion || 1) + 1;
+            const forcedLogoutAt = new Date(
+                Math.floor(Date.now() / 1000) * 1000
+            ).toISOString();
+
+            await strapi
+                .plugin("users-permissions")
+                .service("user")
+                .edit(user.id, {
+                    password,
+                    passwordResetTokenHash: null,
+                    passwordResetRequestedAt: null,
+                    passwordResetExpiresAt: null,
+                    resetPasswordToken: null,
+                    sessionVersion: nextSessionVersion,
+                    forcedLogoutAt,
+                    lastSeenAt: null,
+                });
+
+            const sessionManager = strapi.sessionManager;
+            if (
+                sessionManager?.hasOrigin?.("users-permissions")
+            ) {
+                await sessionManager("users-permissions").invalidateRefreshToken(
+                    String(user.id)
+                );
+            }
+
+            await createAuditLog(
+                strapi,
+                ctx,
+                "user_password_reset_completed",
+                {
+                    actor: user,
+                    targetUser: user,
+                    metadata: {
+                        selfService: true,
+                        sessionVersion: nextSessionVersion,
+                    },
+                }
+            );
+
+            return ctx.send({ data: { reset: true } });
+        },
+
         async find(ctx) {
             return (this as any).findMine(ctx);
         },
@@ -2460,6 +2768,7 @@ export default factories.createCoreController(
                     username: fullUser.username,
                     email: fullUser.email,
                     fullName: fullUser.fullName,
+                    phone: fullUser.phone || "",
                     confirmed: fullUser.confirmed,
                     blocked: fullUser.blocked,
                     sessionVersion: fullUser.sessionVersion || 1,
@@ -2479,6 +2788,179 @@ export default factories.createCoreController(
                           }
                         : null,
                     isAdmin: isAppAdminRole(fullUser.role),
+                },
+            });
+        },
+
+        /**
+         * PUT /api/profile
+         */
+        async updateOwnProfile(ctx) {
+            const user = ctx.state.user;
+            if (!user) return ctx.unauthorized("Необходима авторизация");
+
+            const fullUser = await getAuthenticatedUser(strapi, user.id);
+            if (!fullUser) return ctx.notFound("Пользователь не найден");
+            if (!isActiveUserSession(ctx, fullUser)) {
+                return ctx.unauthorized("Сессия завершена администратором");
+            }
+
+            const fullName = cleanString(ctx.request.body?.fullName);
+            const rawPhone = cleanString(ctx.request.body?.phone);
+            const phone = normalizePhoneNumber(rawPhone);
+
+            if (fullName.length < 2) {
+                return ctx.badRequest("Укажите ФИО");
+            }
+            if (fullName.length > 160) {
+                return ctx.badRequest("ФИО не должно превышать 160 символов");
+            }
+            if (rawPhone && phone === null) {
+                return ctx.badRequest("Укажите корректный номер телефона");
+            }
+
+            const updateData = {
+                fullName,
+                phone: phone || null,
+            };
+            const changedFields = [];
+            if (cleanString(fullUser.fullName) !== fullName) {
+                changedFields.push("fullName");
+            }
+            if (cleanString(fullUser.phone) !== (phone || "")) {
+                changedFields.push("phone");
+            }
+
+            if (changedFields.length === 0) {
+                return ctx.send({ data: toSafeUser(fullUser) });
+            }
+
+            await strapi
+                .plugin("users-permissions")
+                .service("user")
+                .edit(fullUser.id, updateData);
+
+            const updatedUser = await getAuthenticatedUser(strapi, fullUser.id);
+            await createAuditLog(strapi, ctx, "user_updated", {
+                actor: fullUser,
+                targetUser: updatedUser,
+                metadata: {
+                    selfService: true,
+                    changedFields,
+                },
+            });
+
+            return ctx.send({ data: toSafeUser(updatedUser) });
+        },
+
+        /**
+         * POST /api/profile/logout
+         */
+        async logoutOwnSession(ctx) {
+            const user = ctx.state.user;
+            if (!user) return ctx.unauthorized("Необходима авторизация");
+
+            const fullUser = await getAuthenticatedUser(strapi, user.id);
+            if (!fullUser) return ctx.notFound("Пользователь не найден");
+            if (!isActiveUserSession(ctx, fullUser)) {
+                return ctx.unauthorized("Сессия уже завершена");
+            }
+
+            await strapi.db.query("plugin::users-permissions.user").update({
+                where: { id: fullUser.id },
+                data: { lastSeenAt: null },
+            });
+            await createAuditLog(strapi, ctx, "user_logout", {
+                actor: fullUser,
+                targetUser: fullUser,
+                metadata: { selfService: true },
+            });
+
+            ctx.status = 204;
+        },
+
+        /**
+         * POST /api/profile/password
+         *
+         * Changes the password of the authenticated user, applying the shared
+         * security policy and invalidating their other active sessions.
+         */
+        async changeOwnPassword(ctx) {
+            const user = ctx.state.user;
+            if (!user) return ctx.unauthorized("Необходима авторизация");
+
+            const fullUser = await getAuthenticatedUser(strapi, user.id);
+            if (!fullUser) return ctx.notFound("Пользователь не найден");
+            if (!isActiveUserSession(ctx, fullUser)) {
+                return ctx.unauthorized("Сессия завершена администратором");
+            }
+
+            const currentPassword = String(
+                ctx.request.body?.currentPassword || ""
+            );
+            const password = String(ctx.request.body?.password || "");
+            const passwordConfirmation = String(
+                ctx.request.body?.passwordConfirmation || ""
+            );
+
+            if (!currentPassword || !password || !passwordConfirmation) {
+                return ctx.badRequest("Заполните все поля");
+            }
+            if (password !== passwordConfirmation) {
+                return ctx.badRequest("Новые пароли не совпадают");
+            }
+            if (currentPassword === password) {
+                return ctx.badRequest("Новый пароль должен отличаться от текущего");
+            }
+
+            const validCurrentPassword = await strapi
+                .plugin("users-permissions")
+                .service("user")
+                .validatePassword(currentPassword, fullUser.password);
+            if (!validCurrentPassword) {
+                return ctx.badRequest("Неверный текущий пароль");
+            }
+
+            const securitySettings = await getOrCreateSecuritySettings(strapi);
+            const passwordError = validatePasswordAgainstPolicy(
+                password,
+                securitySettings
+            );
+            if (passwordError) return ctx.badRequest(passwordError);
+
+            const nextSessionVersion = Number(fullUser.sessionVersion || 1) + 1;
+            const forcedLogoutAt = new Date(
+                Math.floor(Date.now() / 1000) * 1000
+            ).toISOString();
+
+            await strapi
+                .plugin("users-permissions")
+                .service("user")
+                .edit(fullUser.id, {
+                    password,
+                    sessionVersion: nextSessionVersion,
+                    forcedLogoutAt,
+                });
+
+            const jwt = strapi
+                .plugin("users-permissions")
+                .service("jwt")
+                .issue({ id: fullUser.id });
+
+            await createAuditLog(strapi, ctx, "user_password_changed", {
+                actor: fullUser,
+                targetUser: fullUser,
+                metadata: {
+                    selfService: true,
+                    sessionVersion: nextSessionVersion,
+                },
+            });
+
+            return ctx.send({
+                data: {
+                    jwt,
+                    sessionVersion: nextSessionVersion,
+                    forcedLogoutAt,
                 },
             });
         },

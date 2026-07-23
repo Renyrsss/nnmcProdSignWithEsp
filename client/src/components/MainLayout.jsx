@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Outlet, NavLink, useLocation } from "react-router-dom";
 import {
-    logout,
+    logoutCurrentUser,
     getCurrentUser,
     getToken,
     isAdminUser,
@@ -24,6 +24,8 @@ import {
     BarChart3,
     Archive,
     ShieldAlert,
+    UserRound,
+    ChevronRight,
 } from "lucide-react";
 
 export default function MainLayout() {
@@ -67,6 +69,16 @@ export default function MainLayout() {
     }, []);
 
     useEffect(() => {
+        const handleUserUpdated = (event) => {
+            setUser(event.detail || getCurrentUser());
+        };
+
+        window.addEventListener("auth:user-updated", handleUserUpdated);
+        return () =>
+            window.removeEventListener("auth:user-updated", handleUserUpdated);
+    }, []);
+
+    useEffect(() => {
         let mounted = true;
 
         const heartbeat = async () => {
@@ -87,8 +99,8 @@ export default function MainLayout() {
         };
     }, []);
 
-    const handleLogout = () => {
-        logout();
+    const handleLogout = async () => {
+        await logoutCurrentUser();
         window.location.reload();
     };
 
@@ -243,8 +255,11 @@ export default function MainLayout() {
 
     const visibleMobileItems = isAdmin ? [...navItems, ...adminItems] : navItems;
     const currentItem =
-        [...navItems, ...(isAdmin ? adminItems : [])].find((item) => item.isActive()) ||
-        navItems[0];
+        pathname === "/profile"
+            ? { label: "Личный кабинет" }
+            : [...navItems, ...(isAdmin ? adminItems : [])].find((item) =>
+                  item.isActive()
+              ) || navItems[0];
 
     const desktopNavLink = (item) => {
         const Icon = item.icon;
@@ -333,7 +348,9 @@ export default function MainLayout() {
                         </div>
                     </div>
 
-                    <nav className='space-y-6' aria-label='Основная навигация'>
+                    <nav
+                        className='min-h-0 flex-1 space-y-6 overflow-y-auto pr-1'
+                        aria-label='Основная навигация'>
                         <div>
                             <p className='mb-2 px-3 text-xs font-semibold uppercase tracking-wide text-gray-400'>
                                 Работа
@@ -353,24 +370,49 @@ export default function MainLayout() {
                         )}
                     </nav>
 
-                    <div className='mt-auto border-t border-gray-200 pt-4'>
-                        <div className='mb-3 rounded-lg bg-gray-50 px-3 py-2.5'>
-                            <p className='truncate text-sm font-semibold text-gray-900'>
-                                {userName}
-                            </p>
-                            {userEmail && (
-                                <p className='truncate text-xs text-gray-500'>
-                                    {userEmail}
-                                </p>
-                            )}
+                    <div className='shrink-0 pt-4'>
+                        <div className='overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm'>
+                            <NavLink
+                                to='/profile'
+                                aria-current={
+                                    pathname === "/profile" ? "page" : undefined
+                                }
+                                className={`group flex items-center gap-3 px-3 py-3 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 ${
+                                    pathname === "/profile"
+                                        ? "bg-indigo-50/80"
+                                        : "hover:bg-gray-50"
+                                }`}>
+                                <span
+                                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
+                                        pathname === "/profile"
+                                            ? "bg-indigo-600 text-white"
+                                            : "bg-indigo-50 text-indigo-600"
+                                    }`}>
+                                    <UserRound className='h-4.5 w-4.5' />
+                                </span>
+                                <span className='min-w-0 flex-1'>
+                                    <span className='block truncate text-sm font-semibold text-gray-900'>
+                                        {userName}
+                                    </span>
+                                    {userEmail && (
+                                        <span className='block truncate text-xs text-gray-500'>
+                                            {userEmail}
+                                        </span>
+                                    )}
+                                    <span className='mt-1 block text-xs font-medium text-indigo-600'>
+                                        Личный кабинет
+                                    </span>
+                                </span>
+                                <ChevronRight className='h-4 w-4 shrink-0 text-gray-400 transition-transform group-hover:translate-x-0.5 group-hover:text-indigo-500' />
+                            </NavLink>
+                            <button
+                                type='button'
+                                onClick={handleLogout}
+                                className='flex w-full items-center gap-2 border-t border-gray-200 px-3 py-2.5 text-xs font-medium text-gray-500 transition-colors hover:bg-red-50 hover:text-red-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-red-500'>
+                                <LogOut className='h-4 w-4' />
+                                Выйти из аккаунта
+                            </button>
                         </div>
-                        <button
-                            type='button'
-                            onClick={handleLogout}
-                            className='flex w-full items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50'>
-                            <LogOut className='h-4 w-4' />
-                            Выйти
-                        </button>
                     </div>
                 </div>
             </aside>
@@ -403,13 +445,19 @@ export default function MainLayout() {
                                     </p>
                                 )}
                             </div>
-                            <button
-                                type='button'
-                                onClick={handleLogout}
-                                aria-label='Выйти'
-                                className='flex h-10 w-10 items-center justify-center rounded-lg text-red-600 transition-colors hover:bg-red-50'>
-                                <LogOut className='h-5 w-5' />
-                            </button>
+                            <NavLink
+                                to='/profile'
+                                aria-label='Личный кабинет'
+                                aria-current={
+                                    pathname === "/profile" ? "page" : undefined
+                                }
+                                className={`flex h-10 w-10 items-center justify-center rounded-lg transition-colors ${
+                                    pathname === "/profile"
+                                        ? "bg-indigo-100 text-indigo-700"
+                                        : "text-indigo-600 hover:bg-indigo-50"
+                                }`}>
+                                <UserRound className='h-5 w-5' />
+                            </NavLink>
                         </div>
                     </div>
                 </header>
@@ -426,6 +474,7 @@ export default function MainLayout() {
                     </div>
                 </nav>
             </div>
+
         </div>
     );
 }

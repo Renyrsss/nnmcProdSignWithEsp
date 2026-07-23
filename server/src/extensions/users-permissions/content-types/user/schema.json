@@ -42,6 +42,24 @@
       "private": true,
       "searchable": false
     },
+    "passwordResetTokenHash": {
+      "type": "string",
+      "configurable": false,
+      "private": true,
+      "searchable": false
+    },
+    "passwordResetExpiresAt": {
+      "type": "datetime",
+      "configurable": false,
+      "private": true,
+      "searchable": false
+    },
+    "passwordResetRequestedAt": {
+      "type": "datetime",
+      "configurable": false,
+      "private": true,
+      "searchable": false
+    },
     "confirmationToken": {
       "type": "string",
       "configurable": false,
@@ -67,6 +85,11 @@
     },
     "fullName": {
       "type": "string"
+    },
+    "phone": {
+      "type": "string",
+      "private": true,
+      "searchable": false
     },
     "department": {
       "type": "relation",
