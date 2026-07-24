@@ -1,5 +1,10 @@
 import React, { useState, useEffect, useRef } from "react";
-import { getAllUsers, uploadFile, createDocument } from "../api/documents";
+import {
+    getAllUsers,
+    uploadFile,
+    createDocument,
+    completeDocumentNotificationBatch,
+} from "../api/documents";
 import { getDocumentTypes } from "../api/documentTypes";
 import { getDepartments } from "../api/departments";
 import { getCurrentUser, getMe } from "../api/auth";
@@ -21,6 +26,11 @@ import { useToast } from "./Toast";
 import DocumentSignatureApp from "./DocumentSignatureApp";
 import EdsSignature from "./EdsSignature";
 
+const createNotificationBatchId = () => {
+    if (window.crypto?.randomUUID) return window.crypto.randomUUID();
+    return `batch_${Date.now()}_${Math.random().toString(36).slice(2, 12)}`;
+};
+
 export default function DocumentCreate() {
     const [step, setStep] = useState(1);
     const [files, setFiles] = useState([]); // Массив файлов
@@ -41,7 +51,7 @@ export default function DocumentCreate() {
 
     // Массовое подписание ЭЦП
     const [currentSigningIndex, setCurrentSigningIndex] = useState(0);
-    const [isSigningAll, setIsSigningAll] = useState(false);
+    const [, setIsSigningAll] = useState(false);
     const [signedCount, setSignedCount] = useState(0);
     const processedBatchIndexesRef = useRef(new Set());
 
@@ -322,6 +332,33 @@ export default function DocumentCreate() {
 
         setLoading(true);
 
+        const notificationBatchId =
+            signedFiles.length > 1 ? createNotificationBatchId() : null;
+        let createdInBatch = false;
+        let notificationBatchClosed = false;
+
+        const closeNotificationBatch = async () => {
+            if (
+                !notificationBatchId ||
+                !createdInBatch ||
+                notificationBatchClosed
+            ) {
+                return;
+            }
+            try {
+                await completeDocumentNotificationBatch(notificationBatchId);
+                notificationBatchClosed = true;
+            } catch (error) {
+                // Документы уже созданы. Outbox сам освободит незакрытую пачку
+                // по максимальному таймауту, поэтому не превращаем это в ошибку
+                // основной операции.
+                console.error(
+                    "Не удалось сразу завершить пакет email-уведомлений:",
+                    error
+                );
+            }
+        };
+
         try {
             let successCount = 0;
             let errorCount = 0;
@@ -394,7 +431,10 @@ export default function DocumentCreate() {
                         ],
                     };
 
-                    await createDocument(documentData);
+                    await createDocument(documentData, {
+                        notificationBatchId,
+                    });
+                    createdInBatch = true;
                     successCount++;
                 } catch (error) {
                     console.error(
@@ -404,6 +444,8 @@ export default function DocumentCreate() {
                     errorCount++;
                 }
             }
+
+            await closeNotificationBatch();
 
             if (errorCount === 0) {
                 toast.success(`Успешно создано документов: ${successCount}`);
@@ -418,6 +460,7 @@ export default function DocumentCreate() {
             console.error("Ошибка создания документов:", error);
             toast.error("Ошибка создания документов");
         } finally {
+            await closeNotificationBatch();
             setLoading(false);
         }
     };

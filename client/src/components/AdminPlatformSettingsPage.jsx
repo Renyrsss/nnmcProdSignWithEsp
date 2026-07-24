@@ -23,7 +23,7 @@ const DEFAULT_FORM = {
     allowedFileExtensions: ".pdf",
     documentRetentionDays: "",
     archiveRetentionDays: "",
-    emailNotifications: false,
+    emailNotifications: true,
     smsNotifications: false,
     internalNotifications: true,
     notifyAuthorOnComplete: true,
@@ -366,6 +366,13 @@ export default function AdminPlatformSettingsPage() {
                                 />
                             </label>
                         ))}
+
+                        <div className='rounded-lg border border-indigo-100 bg-indigo-50 px-4 py-3 text-sm leading-6 text-indigo-900'>
+                            Email о новых документах объединяются по получателю:
+                            массовая загрузка создаёт одно сводное письмо, а при
+                            последовательной подписи уведомление получает только
+                            текущий подписант.
+                        </div>
 
                         <div>
                             <label className='mb-1 block text-sm font-medium text-gray-700'>

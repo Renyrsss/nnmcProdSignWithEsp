@@ -53,7 +53,7 @@ export const getActionablePendingDocuments = async () => {
 };
 
 // Создать документ
-export const createDocument = async (documentData) => {
+export const createDocument = async (documentData, options = {}) => {
     const token = localStorage.getItem("token");
 
     // Собираем ID пользователей из signers для assigned_users
@@ -68,10 +68,23 @@ export const createDocument = async (documentData) => {
                 ...documentData,
                 assigned_users: assignedUserIds,
             },
+            ...(options.notificationBatchId
+                ? { notificationBatchId: options.notificationBatchId }
+                : {}),
         },
         {
             headers: { Authorization: `Bearer ${token}` },
         }
+    );
+    return response.data.data;
+};
+
+export const completeDocumentNotificationBatch = async (batchId) => {
+    const token = getToken();
+    const response = await axios.post(
+        `${API_URL}/documents/notification-batches/${encodeURIComponent(batchId)}/complete`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
     );
     return response.data.data;
 };

@@ -990,7 +990,7 @@ const DEFAULT_PLATFORM_SETTINGS = {
     allowedFileExtensions: [".pdf"],
     documentRetentionDays: null,
     archiveRetentionDays: null,
-    emailNotifications: false,
+    emailNotifications: true,
     smsNotifications: false,
     internalNotifications: true,
     notifyAuthorOnComplete: true,
@@ -2348,6 +2348,32 @@ const countSignedHistory = (history: any) =>
         ? history.filter((item) => item?.signedAt && item?.userId).length
         : 0;
 
+const DOCUMENT_NOTIFICATION_BATCH_PATTERN = /^[a-zA-Z0-9_-]{8,80}$/;
+
+const enqueueDocumentAssignmentEmails = async (
+    strapi: any,
+    document: any,
+    previousDocument: any = null,
+    options: {
+        cause?: "created" | "next_signer" | "reassigned" | "resent";
+        batchKey?: string | null;
+        batchOwnerUserId?: number | null;
+    } = {}
+) => {
+    if (!document) return;
+    try {
+        await strapi
+            .service("api::email-notification.email-notification")
+            .enqueueDocumentAssignments(document, previousDocument, options);
+    } catch (error) {
+        // Outbox не должен ломать основной бизнес-процесс. Ошибка сохраняется
+        // в серверных логах и может быть устранена независимо от документа.
+        strapi.log.error(
+            `[email-outbox] enqueue failed document=${document.id}: ${error}`
+        );
+    }
+};
+
 export default factories.createCoreController(
     "api::document.document",
     ({ strapi }) => ({
@@ -2606,6 +2632,15 @@ export default factories.createCoreController(
             if (!(await hasUserRolePermission(strapi, fullUser, "createDocuments"))) {
                 return ctx.forbidden("Ваша роль не может создавать документы");
             }
+            const notificationBatchId = cleanString(
+                ctx.request.body?.notificationBatchId
+            );
+            if (
+                notificationBatchId &&
+                !DOCUMENT_NOTIFICATION_BATCH_PATTERN.test(notificationBatchId)
+            ) {
+                return ctx.badRequest("Некорректный идентификатор массовой операции");
+            }
             const normalizedByType = await normalizeCreateDocumentByTypeRules(
                 strapi,
                 ctx.request.body?.data || {},
@@ -2633,7 +2668,11 @@ export default factories.createCoreController(
                 response?.id ||
                 null;
             const createdDocument = createdId
-                ? await getDocumentByNumericOrDocumentId(strapi, createdId)
+                ? await getDocumentByNumericOrDocumentId(
+                      strapi,
+                      createdId,
+                      getDocumentPopulate()
+                  )
                 : null;
             await createAuditLog(strapi, ctx, "document_created", {
                 document: createdDocument,
@@ -2644,6 +2683,11 @@ export default factories.createCoreController(
                         ? ctx.request.body.data.signers.length
                         : 0,
                 },
+            });
+            await enqueueDocumentAssignmentEmails(strapi, createdDocument, null, {
+                cause: "created",
+                batchKey: notificationBatchId || null,
+                batchOwnerUserId: fullUser.id,
             });
             return response;
         },
@@ -2683,7 +2727,8 @@ export default factories.createCoreController(
             const response = await super.update(ctx);
             const updated = await getDocumentByNumericOrDocumentId(
                 strapi,
-                document.id
+                document.id,
+                getDocumentPopulate()
             );
             const updatedSignedCount = countSignedHistory(
                 updated?.signatureHistory
@@ -2708,7 +2753,44 @@ export default factories.createCoreController(
                     changedFields: Object.keys(updateData),
                 },
             });
+            await enqueueDocumentAssignmentEmails(strapi, updated, document, {
+                cause:
+                    previousStatus === "revision" &&
+                    ACTIVE_DOCUMENT_STATUSES.has(updated?.status)
+                        ? "resent"
+                        : "next_signer",
+            });
             return response;
+        },
+
+        /**
+         * POST /api/documents/notification-batches/:batchId/complete
+         *
+         * Frontend вызывает endpoint один раз после массового создания. Все
+         * накопленные события этого пользователя становятся доступны worker'у
+         * одновременно и уходят одним digest-письмом на каждого получателя.
+         */
+        async completeDocumentNotificationBatch(ctx) {
+            const user = ctx.state.user;
+            if (!user) return ctx.unauthorized("Необходима авторизация");
+
+            const fullUser = await getAuthenticatedUser(strapi, user.id);
+            if (!isActiveUserSession(ctx, fullUser)) {
+                return ctx.unauthorized("Сессия завершена администратором");
+            }
+            if (!(await hasUserRolePermission(strapi, fullUser, "createDocuments"))) {
+                return ctx.forbidden("Ваша роль не может создавать документы");
+            }
+
+            const batchId = cleanString(ctx.params.batchId);
+            if (!DOCUMENT_NOTIFICATION_BATCH_PATTERN.test(batchId)) {
+                return ctx.badRequest("Некорректный идентификатор массовой операции");
+            }
+
+            const result = await strapi
+                .service("api::email-notification.email-notification")
+                .completeBatch(batchId, fullUser.id);
+            return ctx.send({ data: result });
         },
 
         async delete(ctx) {
@@ -3865,6 +3947,9 @@ export default factories.createCoreController(
                     toUserId: newUser.id,
                     toUserName: newUser.fullName || newUser.username,
                 },
+            });
+            await enqueueDocumentAssignmentEmails(strapi, updated, document, {
+                cause: "reassigned",
             });
             const sanitized = await this.sanitizeOutput(updated, ctx);
             return ctx.send({ data: sanitized });

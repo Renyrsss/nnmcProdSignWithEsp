@@ -36,7 +36,7 @@
     },
     "emailNotifications": {
       "type": "boolean",
-      "default": false
+      "default": true
     },
     "smsNotifications": {
       "type": "boolean",

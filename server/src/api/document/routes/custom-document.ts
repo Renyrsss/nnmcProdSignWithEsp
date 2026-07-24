@@ -54,6 +54,12 @@ export default {
             config: { policies: [], middlewares: [] },
         },
         {
+            method: "POST",
+            path: "/documents/notification-batches/:batchId/complete",
+            handler: "api::document.document.completeDocumentNotificationBatch",
+            config: { policies: [], middlewares: [] },
+        },
+        {
             method: "GET",
             path: "/admin/documents",
             handler: "api::document.document.findAdminDocuments",

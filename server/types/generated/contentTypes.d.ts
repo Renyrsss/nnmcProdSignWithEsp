@@ -674,6 +674,95 @@ export interface ApiDocumentDocument extends Struct.CollectionTypeSchema {
   };
 }
 
+export interface ApiEmailNotificationEmailNotification
+  extends Struct.CollectionTypeSchema {
+  collectionName: 'email_notification_outbox';
+  info: {
+    description: '\u041D\u0430\u0434\u0451\u0436\u043D\u0430\u044F \u043E\u0447\u0435\u0440\u0435\u0434\u044C \u0430\u0433\u0440\u0435\u0433\u0438\u0440\u043E\u0432\u0430\u043D\u043D\u044B\u0445 email-\u0443\u0432\u0435\u0434\u043E\u043C\u043B\u0435\u043D\u0438\u0439';
+    displayName: 'Email Notification Outbox';
+    pluralName: 'email-notifications';
+    singularName: 'email-notification';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  pluginOptions: {
+    'content-manager': {
+      visible: false;
+    };
+    'content-type-builder': {
+      visible: false;
+    };
+  };
+  attributes: {
+    attempts: Schema.Attribute.Integer &
+      Schema.Attribute.Private &
+      Schema.Attribute.DefaultTo<0>;
+    availableAt: Schema.Attribute.DateTime &
+      Schema.Attribute.Required &
+      Schema.Attribute.Private;
+    batchClosed: Schema.Attribute.Boolean &
+      Schema.Attribute.Private &
+      Schema.Attribute.DefaultTo<true>;
+    batchKey: Schema.Attribute.String & Schema.Attribute.Private;
+    batchOwnerUserId: Schema.Attribute.Integer & Schema.Attribute.Private;
+    cause: Schema.Attribute.Enumeration<
+      ['created', 'next_signer', 'reassigned', 'resent']
+    > &
+      Schema.Attribute.Required &
+      Schema.Attribute.Private &
+      Schema.Attribute.DefaultTo<'created'>;
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+    creatorName: Schema.Attribute.String & Schema.Attribute.Private;
+    dedupKey: Schema.Attribute.String &
+      Schema.Attribute.Required &
+      Schema.Attribute.Private &
+      Schema.Attribute.Unique;
+    documentDeadlineAt: Schema.Attribute.DateTime & Schema.Attribute.Private;
+    documentDocumentId: Schema.Attribute.String & Schema.Attribute.Private;
+    documentNumericId: Schema.Attribute.Integer &
+      Schema.Attribute.Required &
+      Schema.Attribute.Private;
+    documentTitle: Schema.Attribute.String &
+      Schema.Attribute.Required &
+      Schema.Attribute.Private;
+    documentUid: Schema.Attribute.String & Schema.Attribute.Private;
+    event: Schema.Attribute.Enumeration<['document_assigned']> &
+      Schema.Attribute.Required &
+      Schema.Attribute.Private &
+      Schema.Attribute.DefaultTo<'document_assigned'>;
+    lastError: Schema.Attribute.Text & Schema.Attribute.Private;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<
+      'oneToMany',
+      'api::email-notification.email-notification'
+    > &
+      Schema.Attribute.Private;
+    lockedAt: Schema.Attribute.DateTime & Schema.Attribute.Private;
+    lockToken: Schema.Attribute.String & Schema.Attribute.Private;
+    publishedAt: Schema.Attribute.DateTime;
+    recipientEmail: Schema.Attribute.Email &
+      Schema.Attribute.Required &
+      Schema.Attribute.Private;
+    recipientName: Schema.Attribute.String & Schema.Attribute.Private;
+    recipientUserId: Schema.Attribute.Integer &
+      Schema.Attribute.Required &
+      Schema.Attribute.Private;
+    sentAt: Schema.Attribute.DateTime & Schema.Attribute.Private;
+    status: Schema.Attribute.Enumeration<
+      ['pending', 'processing', 'sent', 'failed']
+    > &
+      Schema.Attribute.Required &
+      Schema.Attribute.Private &
+      Schema.Attribute.DefaultTo<'pending'>;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+  };
+}
+
 export interface ApiNotificationTemplateNotificationTemplate
   extends Struct.CollectionTypeSchema {
   collectionName: 'notification_templates';
@@ -751,7 +840,7 @@ export interface ApiPlatformSettingPlatformSetting
       Schema.Attribute.Private;
     documentRetentionDays: Schema.Attribute.Integer;
     emailNotifications: Schema.Attribute.Boolean &
-      Schema.Attribute.DefaultTo<false>;
+      Schema.Attribute.DefaultTo<true>;
     internalNotifications: Schema.Attribute.Boolean &
       Schema.Attribute.DefaultTo<true>;
     locale: Schema.Attribute.String & Schema.Attribute.Private;
@@ -1422,6 +1511,7 @@ declare module '@strapi/strapi' {
       'api::department.department': ApiDepartmentDepartment;
       'api::document-type.document-type': ApiDocumentTypeDocumentType;
       'api::document.document': ApiDocumentDocument;
+      'api::email-notification.email-notification': ApiEmailNotificationEmailNotification;
       'api::notification-template.notification-template': ApiNotificationTemplateNotificationTemplate;
       'api::platform-setting.platform-setting': ApiPlatformSettingPlatformSetting;
       'api::role-permission-setting.role-permission-setting': ApiRolePermissionSettingRolePermissionSetting;

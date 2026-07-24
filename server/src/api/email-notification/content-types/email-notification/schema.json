@@ -1,0 +1,129 @@
+{
+  "kind": "collectionType",
+  "collectionName": "email_notification_outbox",
+  "info": {
+    "singularName": "email-notification",
+    "pluralName": "email-notifications",
+    "displayName": "Email Notification Outbox",
+    "description": "Надёжная очередь агрегированных email-уведомлений"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {
+    "content-manager": {
+      "visible": false
+    },
+    "content-type-builder": {
+      "visible": false
+    }
+  },
+  "attributes": {
+    "dedupKey": {
+      "type": "string",
+      "required": true,
+      "unique": true,
+      "private": true
+    },
+    "recipientUserId": {
+      "type": "integer",
+      "required": true,
+      "private": true
+    },
+    "recipientEmail": {
+      "type": "email",
+      "required": true,
+      "private": true
+    },
+    "recipientName": {
+      "type": "string",
+      "private": true
+    },
+    "documentNumericId": {
+      "type": "integer",
+      "required": true,
+      "private": true
+    },
+    "documentDocumentId": {
+      "type": "string",
+      "private": true
+    },
+    "documentUid": {
+      "type": "string",
+      "private": true
+    },
+    "documentTitle": {
+      "type": "string",
+      "required": true,
+      "private": true
+    },
+    "documentDeadlineAt": {
+      "type": "datetime",
+      "private": true
+    },
+    "creatorName": {
+      "type": "string",
+      "private": true
+    },
+    "event": {
+      "type": "enumeration",
+      "enum": ["document_assigned"],
+      "default": "document_assigned",
+      "required": true,
+      "private": true
+    },
+    "cause": {
+      "type": "enumeration",
+      "enum": ["created", "next_signer", "reassigned", "resent"],
+      "default": "created",
+      "required": true,
+      "private": true
+    },
+    "batchKey": {
+      "type": "string",
+      "private": true
+    },
+    "batchOwnerUserId": {
+      "type": "integer",
+      "private": true
+    },
+    "batchClosed": {
+      "type": "boolean",
+      "default": true,
+      "private": true
+    },
+    "status": {
+      "type": "enumeration",
+      "enum": ["pending", "processing", "sent", "failed"],
+      "default": "pending",
+      "required": true,
+      "private": true
+    },
+    "availableAt": {
+      "type": "datetime",
+      "required": true,
+      "private": true
+    },
+    "attempts": {
+      "type": "integer",
+      "default": 0,
+      "private": true
+    },
+    "lockToken": {
+      "type": "string",
+      "private": true
+    },
+    "lockedAt": {
+      "type": "datetime",
+      "private": true
+    },
+    "sentAt": {
+      "type": "datetime",
+      "private": true
+    },
+    "lastError": {
+      "type": "text",
+      "private": true
+    }
+  }
+}

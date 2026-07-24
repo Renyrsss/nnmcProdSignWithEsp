@@ -72,6 +72,7 @@ const AUTHENTICATED_APP_ACTIONS = [
     "api::document.document.updateOwnProfile",
     "api::document.document.changeOwnPassword",
     "api::document.document.logoutOwnSession",
+    "api::document.document.completeDocumentNotificationBatch",
 ];
 
 const ADMIN_APP_ACTIONS = [
