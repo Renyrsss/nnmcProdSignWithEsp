@@ -11,4 +11,16 @@ export default {
             rule: "*/30 * * * * *",
         },
     },
+    queueDailyUnsignedDocumentReminders: {
+        task: async ({ strapi }: { strapi: any }) => {
+            await strapi
+                .service("api::email-notification.email-notification")
+                .queueDailyUnsignedReminders();
+        },
+        options: {
+            // Проверяем расписание раз в минуту. Сервис сам учитывает часовую
+            // зону, рабочие дни и гарантирует не более одного digest в день.
+            rule: "0 * * * * *",
+        },
+    },
 };

@@ -30,6 +30,8 @@ const DEFAULT_FORM = {
     notifyAdminOnErrors: true,
     unsignedReminderEnabled: false,
     unsignedReminderHours: 24,
+    unsignedReminderTime: "16:00",
+    unsignedReminderWeekdaysOnly: true,
     signatureModes: {
         eds: true,
         simple: true,
@@ -374,24 +376,61 @@ export default function AdminPlatformSettingsPage() {
                             текущий подписант.
                         </div>
 
-                        <div>
-                            <label className='mb-1 block text-sm font-medium text-gray-700'>
-                                Интервал напоминаний, часов
-                            </label>
-                            <input
-                                type='number'
-                                min='1'
-                                max='8760'
-                                value={form.unsignedReminderHours}
-                                onChange={(event) =>
-                                    updateField(
-                                        "unsignedReminderHours",
-                                        event.target.value
-                                    )
-                                }
-                                disabled={!form.unsignedReminderEnabled}
-                                className='w-full rounded-lg border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-100 focus:border-transparent focus:ring-2 focus:ring-indigo-500'
-                            />
+                        <div className='rounded-lg border border-gray-200 p-4'>
+                            <div className='grid grid-cols-1 gap-4 sm:grid-cols-2 sm:items-end'>
+                                <div>
+                                    <label
+                                        htmlFor='unsigned-reminder-time'
+                                        className='mb-1 block text-sm font-medium text-gray-700'>
+                                        Время ежедневного напоминания
+                                    </label>
+                                    <input
+                                        id='unsigned-reminder-time'
+                                        type='time'
+                                        value={form.unsignedReminderTime}
+                                        onChange={(event) =>
+                                            updateField(
+                                                "unsignedReminderTime",
+                                                event.target.value
+                                            )
+                                        }
+                                        disabled={!form.unsignedReminderEnabled}
+                                        className='w-full rounded-lg border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-100 focus:border-transparent focus:ring-2 focus:ring-indigo-500'
+                                    />
+                                </div>
+
+                                <label className='flex min-h-10 items-center gap-3 rounded-lg bg-gray-50 px-3 py-2'>
+                                    <input
+                                        type='checkbox'
+                                        checked={Boolean(
+                                            form.unsignedReminderWeekdaysOnly
+                                        )}
+                                        onChange={(event) =>
+                                            updateField(
+                                                "unsignedReminderWeekdaysOnly",
+                                                event.target.checked
+                                            )
+                                        }
+                                        disabled={!form.unsignedReminderEnabled}
+                                        className='h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500'
+                                    />
+                                    <span className='text-sm font-medium text-gray-700'>
+                                        Только по рабочим дням
+                                    </span>
+                                </label>
+                            </div>
+                            <p className='mt-3 text-xs leading-5 text-gray-500'>
+                                Одно сводное письмо на пользователя в день, только
+                                если есть документы, ожидающие именно его подписи.
+                                Часовой пояс: Asia/Almaty.
+                            </p>
+                            {!form.emailNotifications &&
+                                form.unsignedReminderEnabled && (
+                                    <p className='mt-2 text-xs font-medium text-amber-700'>
+                                        Включите Email-уведомления выше, иначе
+                                        напоминания отправляться не будут.
+                                    </p>
+                                )}
                         </div>
                     </div>
                 </section>

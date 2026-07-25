@@ -67,14 +67,14 @@
     },
     "event": {
       "type": "enumeration",
-      "enum": ["document_assigned"],
+      "enum": ["document_assigned", "unsigned_reminder"],
       "default": "document_assigned",
       "required": true,
       "private": true
     },
     "cause": {
       "type": "enumeration",
-      "enum": ["created", "next_signer", "reassigned", "resent"],
+      "enum": ["created", "next_signer", "reassigned", "resent", "daily_reminder"],
       "default": "created",
       "required": true,
       "private": true

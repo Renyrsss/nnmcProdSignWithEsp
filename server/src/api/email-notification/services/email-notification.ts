@@ -6,7 +6,9 @@ const ACTIVE_DOCUMENT_STATUSES = new Set(["pending", "in_progress"]);
 const BATCH_ID_PATTERN = /^[a-zA-Z0-9_-]{8,80}$/;
 
 let processorRunning = false;
+let reminderSweepRunning = false;
 let lastCleanupAt = 0;
+let lastReminderSweepKey = "";
 
 const boundedInt = (value: any, fallback: number, min: number, max: number) => {
     const parsed = Number.parseInt(String(value ?? fallback), 10);
@@ -43,6 +45,57 @@ const getMaxAttempts = () =>
 
 const getMaxDigestItems = () =>
     boundedInt(process.env.DOCUMENT_EMAIL_DIGEST_MAX_ITEMS, 20, 5, 50);
+
+const getTimeZone = () => {
+    const configured = String(
+        process.env.DOCUMENT_REMINDER_TIME_ZONE || "Asia/Almaty"
+    ).trim();
+    try {
+        new Intl.DateTimeFormat("en", { timeZone: configured }).format();
+        return configured;
+    } catch {
+        return "Asia/Almaty";
+    }
+};
+
+const getZonedClock = (date = new Date()) => {
+    let formatter: Intl.DateTimeFormat;
+    try {
+        formatter = new Intl.DateTimeFormat("en-CA", {
+            timeZone: getTimeZone(),
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+            hourCycle: "h23",
+            weekday: "short",
+        });
+    } catch {
+        formatter = new Intl.DateTimeFormat("en-CA", {
+            timeZone: "Asia/Almaty",
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+            hourCycle: "h23",
+            weekday: "short",
+        });
+    }
+
+    const parts = Object.fromEntries(
+        formatter
+            .formatToParts(date)
+            .filter((part) => part.type !== "literal")
+            .map((part) => [part.type, part.value])
+    );
+    return {
+        dateKey: `${parts.year}-${parts.month}-${parts.day}`,
+        time: `${parts.hour}:${parts.minute}`,
+        weekday: parts.weekday,
+    };
+};
 
 const addSeconds = (date: Date, seconds: number) =>
     new Date(date.getTime() + seconds * 1000).toISOString();
@@ -219,6 +272,91 @@ const buildDigestEmail = (rows: any[]) => {
     return { subject, text, html };
 };
 
+const buildUnsignedReminderEmail = (rows: any[]) => {
+    const sorted = [...rows].sort((a, b) => {
+        const aDeadline = a.documentDeadlineAt
+            ? new Date(a.documentDeadlineAt).getTime()
+            : Number.POSITIVE_INFINITY;
+        const bDeadline = b.documentDeadlineAt
+            ? new Date(b.documentDeadlineAt).getTime()
+            : Number.POSITIVE_INFINITY;
+        return aDeadline - bDeadline || Number(a.id) - Number(b.id);
+    });
+    const count = sorted.length;
+    const visibleRows = sorted.slice(0, getMaxDigestItems());
+    const remaining = count - visibleRows.length;
+    const recipientName = rows[0]?.recipientName || "пользователь";
+    const actionUrl = `${getClientUrl()}/documents`;
+    const subject = `Напоминание: документы ожидают вашей подписи — ${count}`;
+    const textItems = visibleRows.map((row, index) => {
+        const deadline = formatDeadline(row.documentDeadlineAt);
+        return `${index + 1}. ${row.documentTitle}${deadline ? ` — до ${deadline}` : ""}`;
+    });
+    const text = [
+        `Здравствуйте, ${recipientName}!`,
+        "",
+        `На конец рабочего дня вашей подписи ожидают документы: ${count}.`,
+        "",
+        ...textItems,
+        ...(remaining > 0 ? [`И ещё: ${remaining}.`] : []),
+        "",
+        `Перейти к документам: ${actionUrl}`,
+        "",
+        "Это одно ежедневное напоминание. Если вы уже всё подписали, письмо завтра не придёт.",
+        "Для открытия подключитесь к корпоративной сети или VPN.",
+    ].join("\n");
+    const listItems = visibleRows
+        .map((row) => {
+            const deadline = formatDeadline(row.documentDeadlineAt);
+            const meta = [
+                row.documentUid ? `ID ${escapeHtml(row.documentUid)}` : "",
+                row.creatorName ? `от ${escapeHtml(row.creatorName)}` : "",
+                deadline ? `до ${escapeHtml(deadline)}` : "",
+            ].filter(Boolean);
+            return `<li style="margin:0 0 12px"><strong>${escapeHtml(
+                row.documentTitle
+            )}</strong>${meta.length ? `<br><span style="color:#667085;font-size:13px">${meta.join(" · ")}</span>` : ""}</li>`;
+        })
+        .join("");
+
+    const html = `<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    @media only screen and (max-width:600px) {
+      .email-shell { padding:16px 0 !important; }
+      .email-card { width:100% !important; max-width:100% !important; }
+      .email-header, .email-content { padding-left:20px !important; padding-right:20px !important; }
+      .email-title { font-size:21px !important; }
+    }
+  </style>
+</head>
+<body style="margin:0;background:#f4f6fb;font-family:Arial,sans-serif;color:#1f2937">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width:100%;background:#f4f6fb">
+    <tr><td class="email-shell" align="center" style="padding:32px 16px">
+      <table class="email-card" role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width:100%;max-width:640px;table-layout:fixed;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 8px 30px rgba(16,24,40,.08)">
+        <tr><td class="email-header" style="padding:28px 32px;background:#4f35f5;color:#fff;overflow-wrap:anywhere;word-break:break-word">
+          <div style="font-size:14px;opacity:.85">Электронная подпись · ежедневное напоминание</div>
+          <h1 class="email-title" style="margin:8px 0 0;font-size:24px;line-height:1.3">Документы ожидают вашей подписи</h1>
+        </td></tr>
+        <tr><td class="email-content" style="padding:30px 32px;overflow-wrap:anywhere;word-break:break-word">
+          <p style="margin:0 0 20px;font-size:16px">Здравствуйте, ${escapeHtml(recipientName)}!</p>
+          <p style="margin:0 0 20px;color:#475467;line-height:1.6">На конец рабочего дня неподписанными остаются документы: <strong>${count}</strong>.</p>
+          <ol style="margin:0 0 20px;padding-left:22px;line-height:1.45">${listItems}</ol>
+          ${remaining > 0 ? `<p style="margin:0 0 22px;color:#667085">И ещё: ${remaining}.</p>` : ""}
+          <a href="${escapeHtml(actionUrl)}" style="display:inline-block;padding:13px 22px;border-radius:10px;background:#4f35f5;color:#fff;text-decoration:none;font-weight:700">Перейти к документам</a>
+          <div style="margin-top:24px;padding:14px 16px;border-radius:10px;background:#f8f9fc;color:#667085;font-size:13px;line-height:1.5">Это одно ежедневное напоминание. Письмо отправляется только при наличии документов, где сейчас ваша очередь подписывать. Для открытия подключитесь к корпоративной сети или VPN.</div>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+
+    return { subject, text, html };
+};
+
 const cleanupOldRows = async (strapi: any) => {
     if (Date.now() - lastCleanupAt < 24 * 60 * 60 * 1000) return;
     lastCleanupAt = Date.now();
@@ -318,6 +456,179 @@ export default factories.createCoreService(UID, ({ strapi }) => ({
         return { queued };
     },
 
+    async queueDailyUnsignedReminders(referenceDate: Date = new Date()) {
+        if (reminderSweepRunning) return { queued: 0, skipped: true };
+        if (!envFlag(process.env.DOCUMENT_EMAIL_NOTIFICATIONS_ENABLED, true)) {
+            return { queued: 0, disabled: true };
+        }
+
+        const settings = await strapi.db
+            .query("api::platform-setting.platform-setting")
+            .findOne({ orderBy: { createdAt: "asc" } });
+        if (
+            !settings?.unsignedReminderEnabled ||
+            settings.emailNotifications === false
+        ) {
+            return { queued: 0, disabled: true };
+        }
+
+        const clock = getZonedClock(referenceDate);
+        const configuredTime = /^([01]\d|2[0-3]):[0-5]\d$/.test(
+            String(settings.unsignedReminderTime || "")
+        )
+            ? String(settings.unsignedReminderTime)
+            : "16:00";
+        const weekdaysOnly = settings.unsignedReminderWeekdaysOnly !== false;
+        const isWeekend = clock.weekday === "Sat" || clock.weekday === "Sun";
+
+        if (weekdaysOnly && isWeekend) {
+            lastReminderSweepKey = clock.dateKey;
+            return { queued: 0, weekend: true };
+        }
+        if (clock.time < configuredTime) return { queued: 0, beforeSchedule: true };
+        if (lastReminderSweepKey === clock.dateKey) {
+            return { queued: 0, alreadyChecked: true };
+        }
+
+        reminderSweepRunning = true;
+        try {
+            const documents: any[] = [];
+            const pageSize = 500;
+            let offset = 0;
+            while (true) {
+                const page = await strapi.db
+                    .query("api::document.document")
+                    .findMany({
+                        where: {
+                            status: { $in: ["pending", "in_progress"] },
+                            archivedAt: { $null: true },
+                        },
+                        select: [
+                            "id",
+                            "documentId",
+                            "uid",
+                            "title",
+                            "status",
+                            "signatureSequential",
+                            "signers",
+                            "signatureHistory",
+                            "signingDeadlineAt",
+                        ],
+                        populate: {
+                            creator: {
+                                select: ["id", "username", "fullName", "email"],
+                            },
+                        },
+                        orderBy: { id: "asc" },
+                        offset,
+                        limit: pageSize,
+                    });
+                documents.push(...page);
+                if (page.length < pageSize) break;
+                offset += pageSize;
+            }
+
+            const documentsByRecipient = new Map<number, any[]>();
+            for (const document of documents) {
+                for (const recipientUserId of getActiveSignerIds(document)) {
+                    const recipientDocuments =
+                        documentsByRecipient.get(recipientUserId) || [];
+                    recipientDocuments.push(document);
+                    documentsByRecipient.set(recipientUserId, recipientDocuments);
+                }
+            }
+
+            const recipientIds = Array.from(documentsByRecipient.keys());
+            const users: any[] = [];
+            for (let index = 0; index < recipientIds.length; index += 500) {
+                const userPage = await strapi.db
+                    .query("plugin::users-permissions.user")
+                    .findMany({
+                        where: { id: { $in: recipientIds.slice(index, index + 500) } },
+                        select: ["id", "username", "fullName", "email", "blocked"],
+                    });
+                users.push(...userPage);
+            }
+
+            let queued = 0;
+            let recipients = 0;
+            const nowIso = referenceDate.toISOString();
+            for (const user of users) {
+                if (!user?.email || user.blocked === true) continue;
+                const userDocuments = documentsByRecipient.get(Number(user.id)) || [];
+                if (userDocuments.length === 0) continue;
+
+                const campaignKey = `unsigned_reminder_${clock.dateKey}_${user.id}`;
+                const campaignRows = await strapi.db.query(UID).findMany({
+                    where: { batchKey: campaignKey },
+                    select: ["id", "status"],
+                    limit: 1000,
+                });
+                if (
+                    campaignRows.some((row: any) =>
+                        ["processing", "sent", "failed"].includes(row.status)
+                    )
+                ) {
+                    continue;
+                }
+
+                let userQueued = 0;
+                for (const document of userDocuments) {
+                    const dedupKey = `unsigned_reminder:${clock.dateKey}:${document.id}:${user.id}`;
+                    try {
+                        await strapi.db.query(UID).create({
+                            data: {
+                                dedupKey,
+                                recipientUserId: user.id,
+                                recipientEmail: String(user.email).trim().toLowerCase(),
+                                recipientName:
+                                    user.fullName || user.username || user.email,
+                                documentNumericId: document.id,
+                                documentDocumentId: document.documentId || null,
+                                documentUid: document.uid || null,
+                                documentTitle:
+                                    document.title || "Документ без названия",
+                                documentDeadlineAt:
+                                    document.signingDeadlineAt || null,
+                                creatorName:
+                                    document.creator?.fullName ||
+                                    document.creator?.username ||
+                                    document.creator?.email ||
+                                    null,
+                                event: "unsigned_reminder",
+                                cause: "daily_reminder",
+                                batchKey: campaignKey,
+                                batchClosed: true,
+                                status: "pending",
+                                availableAt: nowIso,
+                                attempts: 0,
+                            },
+                        });
+                        queued++;
+                        userQueued++;
+                    } catch (error) {
+                        const existing = await strapi.db.query(UID).findOne({
+                            where: { dedupKey },
+                            select: ["id"],
+                        });
+                        if (!existing) throw error;
+                    }
+                }
+                if (userQueued > 0) recipients++;
+            }
+
+            lastReminderSweepKey = clock.dateKey;
+            if (queued > 0) {
+                strapi.log.info(
+                    `[email-reminder] queued=${queued} recipients=${recipients} date=${clock.dateKey} time=${configuredTime} tz=${getTimeZone()}`
+                );
+            }
+            return { queued, recipients, date: clock.dateKey };
+        } finally {
+            reminderSweepRunning = false;
+        }
+    },
+
     async completeBatch(batchKeyValue: any, ownerUserId: number) {
         const batchKey = normalizeBatchKey(batchKeyValue);
         if (!batchKey || !Number.isFinite(Number(ownerUserId))) {
@@ -364,21 +675,32 @@ export default factories.createCoreService(UID, ({ strapi }) => ({
 
             const dueRows = await strapi.db.query(UID).findMany({
                 where: { status: "pending", availableAt: { $lte: nowIso } },
-                select: ["recipientUserId"],
+                select: ["recipientUserId", "event"],
                 orderBy: { availableAt: "asc" },
                 limit: 1000,
             });
-            const recipientIds = Array.from(
-                new Set(
+            const groups = Array.from(
+                new Map(
                     dueRows
-                        .map((row: any) => Number(row.recipientUserId))
-                        .filter((id: number) => Number.isFinite(id) && id > 0)
-                )
-            );
+                        .map((row: any) => ({
+                            recipientUserId: Number(row.recipientUserId),
+                            event: row.event || "document_assigned",
+                        }))
+                        .filter(
+                            (group: any) =>
+                                Number.isFinite(group.recipientUserId) &&
+                                group.recipientUserId > 0
+                        )
+                        .map((group: any) => [
+                            `${group.recipientUserId}:${group.event}`,
+                            group,
+                        ])
+                ).values()
+            ) as Array<{ recipientUserId: number; event: string }>;
 
-            for (const recipientUserId of recipientIds) {
+            for (const { recipientUserId, event } of groups) {
                 const pendingRows = await strapi.db.query(UID).findMany({
-                    where: { status: "pending", recipientUserId },
+                    where: { status: "pending", recipientUserId, event },
                     orderBy: { createdAt: "asc" },
                     limit: 1000,
                 });
@@ -418,7 +740,10 @@ export default factories.createCoreService(UID, ({ strapi }) => ({
                 try {
                     const emailService = strapi.plugin("email")?.service("email");
                     if (!emailService) throw new Error("Email service is not configured");
-                    const message = buildDigestEmail(lockedRows);
+                    const message =
+                        event === "unsigned_reminder"
+                            ? buildUnsignedReminderEmail(lockedRows)
+                            : buildDigestEmail(lockedRows);
                     await emailService.send({
                         to: lockedRows[0].recipientEmail,
                         ...message,
@@ -435,7 +760,7 @@ export default factories.createCoreService(UID, ({ strapi }) => ({
                     });
                     processed += lockedRows.length;
                     strapi.log.info(
-                        `[email-outbox] sent recipient=${recipientUserId} documents=${lockedRows.length}`
+                        `[email-outbox] sent event=${event} recipient=${recipientUserId} documents=${lockedRows.length}`
                     );
                 } catch (error: any) {
                     const errorMessage = String(error?.message || error || "Unknown error").slice(
@@ -461,7 +786,7 @@ export default factories.createCoreService(UID, ({ strapi }) => ({
                         });
                     }
                     strapi.log.error(
-                        `[email-outbox] send failed recipient=${recipientUserId} attempts=${Number(lockedRows[0]?.attempts || 0) + 1}: ${errorMessage}`
+                        `[email-outbox] send failed event=${event} recipient=${recipientUserId} attempts=${Number(lockedRows[0]?.attempts || 0) + 1}: ${errorMessage}`
                     );
                 }
             }

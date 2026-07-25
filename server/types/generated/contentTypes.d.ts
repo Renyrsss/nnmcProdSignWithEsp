@@ -707,7 +707,7 @@ export interface ApiEmailNotificationEmailNotification
     batchKey: Schema.Attribute.String & Schema.Attribute.Private;
     batchOwnerUserId: Schema.Attribute.Integer & Schema.Attribute.Private;
     cause: Schema.Attribute.Enumeration<
-      ['created', 'next_signer', 'reassigned', 'resent']
+      ['created', 'next_signer', 'reassigned', 'resent', 'daily_reminder']
     > &
       Schema.Attribute.Required &
       Schema.Attribute.Private &
@@ -729,7 +729,9 @@ export interface ApiEmailNotificationEmailNotification
       Schema.Attribute.Required &
       Schema.Attribute.Private;
     documentUid: Schema.Attribute.String & Schema.Attribute.Private;
-    event: Schema.Attribute.Enumeration<['document_assigned']> &
+    event: Schema.Attribute.Enumeration<
+      ['document_assigned', 'unsigned_reminder']
+    > &
       Schema.Attribute.Required &
       Schema.Attribute.Private &
       Schema.Attribute.DefaultTo<'document_assigned'>;
@@ -866,6 +868,10 @@ export interface ApiPlatformSettingPlatformSetting
       Schema.Attribute.DefaultTo<false>;
     unsignedReminderHours: Schema.Attribute.Integer &
       Schema.Attribute.DefaultTo<24>;
+    unsignedReminderTime: Schema.Attribute.String &
+      Schema.Attribute.DefaultTo<'16:00'>;
+    unsignedReminderWeekdaysOnly: Schema.Attribute.Boolean &
+      Schema.Attribute.DefaultTo<true>;
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
       Schema.Attribute.Private;

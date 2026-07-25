@@ -62,6 +62,14 @@
       "type": "integer",
       "default": 24
     },
+    "unsignedReminderTime": {
+      "type": "string",
+      "default": "16:00"
+    },
+    "unsignedReminderWeekdaysOnly": {
+      "type": "boolean",
+      "default": true
+    },
     "signatureModes": {
       "type": "json"
     },

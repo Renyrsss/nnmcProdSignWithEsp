@@ -997,6 +997,8 @@ const DEFAULT_PLATFORM_SETTINGS = {
     notifyAdminOnErrors: true,
     unsignedReminderEnabled: false,
     unsignedReminderHours: 24,
+    unsignedReminderTime: "16:00",
+    unsignedReminderWeekdaysOnly: true,
     signatureModes: {
         eds: true,
         simple: true,
@@ -1023,6 +1025,13 @@ const normalizeIntegerSetting = (
     const parsed = Number.parseInt(String(value), 10);
     if (!Number.isFinite(parsed) || parsed < min || parsed > max) return undefined;
     return parsed;
+};
+
+const normalizeReminderTime = (value: any) => {
+    const normalized = cleanString(value);
+    return /^([01]\d|2[0-3]):[0-5]\d$/.test(normalized)
+        ? normalized
+        : undefined;
 };
 
 const normalizeFileExtensions = (value: any) => {
@@ -1106,6 +1115,13 @@ const toSafePlatformSettings = (settings: any = {}) => ({
     unsignedReminderHours:
         settings.unsignedReminderHours ||
         DEFAULT_PLATFORM_SETTINGS.unsignedReminderHours,
+    unsignedReminderTime:
+        normalizeReminderTime(settings.unsignedReminderTime) ||
+        DEFAULT_PLATFORM_SETTINGS.unsignedReminderTime,
+    unsignedReminderWeekdaysOnly: toBoolean(
+        settings.unsignedReminderWeekdaysOnly,
+        DEFAULT_PLATFORM_SETTINGS.unsignedReminderWeekdaysOnly
+    ),
     signatureModes:
         settings.signatureModes || DEFAULT_PLATFORM_SETTINGS.signatureModes,
     retentionPolicyEnabled: toBoolean(
@@ -1154,6 +1170,9 @@ const normalizePlatformSettingsPayload = (body: any) => {
         8760,
         false
     );
+    const unsignedReminderTime = normalizeReminderTime(
+        body.unsignedReminderTime || DEFAULT_PLATFORM_SETTINGS.unsignedReminderTime
+    );
     const allowedFileExtensions = normalizeFileExtensions(
         body.allowedFileExtensions
     );
@@ -1168,6 +1187,9 @@ const normalizePlatformSettingsPayload = (body: any) => {
     }
     if (unsignedReminderHours === undefined) {
         return { error: "Некорректный период напоминаний" };
+    }
+    if (!unsignedReminderTime) {
+        return { error: "Некорректное время ежедневного напоминания" };
     }
     if (!allowedFileExtensions) {
         return { error: "Укажите хотя бы один корректный формат файла" };
@@ -1196,6 +1218,10 @@ const normalizePlatformSettingsPayload = (body: any) => {
             notifyAdminOnErrors: Boolean(body.notifyAdminOnErrors),
             unsignedReminderEnabled: Boolean(body.unsignedReminderEnabled),
             unsignedReminderHours,
+            unsignedReminderTime,
+            unsignedReminderWeekdaysOnly: Boolean(
+                body.unsignedReminderWeekdaysOnly
+            ),
             signatureModes,
             retentionPolicyEnabled: Boolean(body.retentionPolicyEnabled),
         },
