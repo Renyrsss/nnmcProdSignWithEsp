@@ -1,7 +1,6 @@
 import axios from "axios";
-import { getToken } from "./auth";
-
-const API_URL = `${import.meta.env.VITE_API_BASE}/api`;
+import { getCurrentUser, getToken } from "./auth";
+import { getApiRoot } from "../config/organizations";
 
 export const isMyTurnToSign = (doc, userId) => {
     // Документ должен быть активным. Отозванные/завершённые/ревизионные
@@ -29,8 +28,8 @@ export const isMyTurnToSign = (doc, userId) => {
 // Авторизация и distinct-фильтрация выполняются на сервере, здесь только
 // HTTP-вызов. role: 'creator' | 'assigned' | 'all'.
 const fetchMine = async (role) => {
-    const token = localStorage.getItem("token");
-    const response = await axios.get(`${API_URL}/documents/mine?role=${role}`, {
+    const token = getToken();
+    const response = await axios.get(`${getApiRoot()}/documents/mine?role=${role}`, {
         headers: { Authorization: `Bearer ${token}` },
     });
     return response.data?.data || [];
@@ -47,14 +46,14 @@ export const getPendingDocuments = async () => {
 };
 
 export const getActionablePendingDocuments = async () => {
-    const user = JSON.parse(localStorage.getItem("user"));
+    const user = getCurrentUser();
     const allPending = await getPendingDocuments();
     return allPending.filter((doc) => isMyTurnToSign(doc, user.id));
 };
 
 // Создать документ
 export const createDocument = async (documentData, options = {}) => {
-    const token = localStorage.getItem("token");
+    const token = getToken();
 
     // Собираем ID пользователей из signers для assigned_users
     const assignedUserIds = documentData.signers
@@ -62,7 +61,7 @@ export const createDocument = async (documentData, options = {}) => {
         : [];
 
     const response = await axios.post(
-        `${API_URL}/documents`,
+        `${getApiRoot()}/documents`,
         {
             data: {
                 ...documentData,
@@ -82,7 +81,7 @@ export const createDocument = async (documentData, options = {}) => {
 export const completeDocumentNotificationBatch = async (batchId) => {
     const token = getToken();
     const response = await axios.post(
-        `${API_URL}/documents/notification-batches/${encodeURIComponent(batchId)}/complete`,
+        `${getApiRoot()}/documents/notification-batches/${encodeURIComponent(batchId)}/complete`,
         {},
         { headers: { Authorization: `Bearer ${token}` } }
     );
@@ -94,7 +93,7 @@ export const updateDocument = async (documentId, data) => {
     const token = getToken();
     try {
         const response = await axios.put(
-            `${API_URL}/documents/${documentId}`,
+            `${getApiRoot()}/documents/${documentId}`,
             { data },
             {
                 headers: {
@@ -115,7 +114,7 @@ export const uploadFile = async (file) => {
     formData.append("files", file);
 
     try {
-        const response = await axios.post(`${API_URL}/upload`, formData, {
+        const response = await axios.post(`${getApiRoot()}/upload`, formData, {
             headers: {
                 Authorization: `Bearer ${token}`,
                 "Content-Type": "multipart/form-data",
@@ -131,7 +130,7 @@ export const uploadFile = async (file) => {
 export const getAllUsers = async () => {
     const token = getToken();
     try {
-        const response = await axios.get(`${API_URL}/users?populate=department`, {
+        const response = await axios.get(`${getApiRoot()}/users?populate=department`, {
             headers: {
                 Authorization: `Bearer ${token}`,
             },
@@ -146,7 +145,7 @@ export const getAllUsers = async () => {
 export const getDocumentFileUrl = async (documentId, fileType = "current") => {
     const token = getToken();
     const response = await axios.get(
-        `${API_URL}/documents/${documentId}/file-url?file=${fileType}`,
+        `${getApiRoot()}/documents/${documentId}/file-url?file=${fileType}`,
         { headers: { Authorization: `Bearer ${token}` } }
     );
     return response.data.url;
@@ -156,7 +155,7 @@ export const getDocumentFileUrl = async (documentId, fileType = "current") => {
 export const presignDocumentFile = async (documentId, key) => {
     const token = getToken();
     const response = await axios.get(
-        `${API_URL}/documents/${documentId}/presign?key=${encodeURIComponent(key)}`,
+        `${getApiRoot()}/documents/${documentId}/presign?key=${encodeURIComponent(key)}`,
         { headers: { Authorization: `Bearer ${token}` } }
     );
     return response.data.url;
@@ -165,7 +164,7 @@ export const presignDocumentFile = async (documentId, key) => {
 export const reportDocumentSignatureError = async (documentId, payload) => {
     const token = getToken();
     const response = await axios.post(
-        `${API_URL}/documents/${documentId}/signature-error`,
+        `${getApiRoot()}/documents/${documentId}/signature-error`,
         payload,
         { headers: { Authorization: `Bearer ${token}` } }
     );
@@ -177,7 +176,7 @@ export const cancelDocument = async (documentId) => {
     const token = getToken();
     try {
         const response = await axios.put(
-            `${API_URL}/documents/${documentId}`,
+            `${getApiRoot()}/documents/${documentId}`,
             {
                 data: {
                     status: "cancelled",

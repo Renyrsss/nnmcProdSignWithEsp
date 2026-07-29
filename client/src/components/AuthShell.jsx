@@ -1,5 +1,9 @@
 import React from "react";
 import { CheckCircle2, FileSignature, ShieldCheck } from "lucide-react";
+import {
+    getActiveOrganization,
+    getOrganizationTheme,
+} from "../config/organizations";
 
 const benefits = [
     "Документы и маршруты подписания защищены",
@@ -7,7 +11,15 @@ const benefits = [
     "Контроль активных пользовательских сессий",
 ];
 
-export default function AuthShell({ eyebrow, title, description, children }) {
+export default function AuthShell({
+    eyebrow,
+    title,
+    description,
+    children,
+    organization = getActiveOrganization(),
+}) {
+    const theme = getOrganizationTheme(organization);
+
     return (
         <div className='relative min-h-screen overflow-hidden bg-slate-50 px-4 py-8 sm:px-6 lg:flex lg:items-center lg:py-12'>
             <div className='pointer-events-none absolute -left-24 top-20 h-72 w-72 rounded-full bg-indigo-200/60 blur-3xl' />
@@ -19,12 +31,15 @@ export default function AuthShell({ eyebrow, title, description, children }) {
                     <div className='absolute -bottom-20 -left-20 h-64 w-64 rounded-full bg-violet-500/20 blur-2xl' />
 
                     <div className='relative flex items-center gap-3'>
-                        <span className='flex h-11 w-11 items-center justify-center rounded-2xl bg-indigo-500 shadow-lg shadow-indigo-950/30'>
+                        <span
+                            className={`flex h-11 w-11 items-center justify-center rounded-2xl shadow-lg shadow-slate-950/30 ${theme.icon}`}>
                             <FileSignature className='h-6 w-6' />
                         </span>
                         <div>
-                            <p className='font-semibold'>Электронная подпись</p>
-                            <p className='text-sm text-slate-400'>Документооборот</p>
+                            <p className='font-semibold'>MedSign</p>
+                            <p className='text-sm text-slate-400'>
+                                {organization.shortName}
+                            </p>
                         </div>
                     </div>
 
@@ -36,8 +51,9 @@ export default function AuthShell({ eyebrow, title, description, children }) {
                             Безопасная работа с документами
                         </h2>
                         <p className='mt-4 max-w-sm text-base leading-7 text-slate-400'>
-                            Единое пространство для создания, согласования и
-                            подписания документов.
+                            Защищённый контур организации «
+                            {organization.shortName}» для создания,
+                            согласования и подписания документов.
                         </p>
 
                         <ul className='mt-8 space-y-4'>
@@ -60,14 +76,17 @@ export default function AuthShell({ eyebrow, title, description, children }) {
 
                 <main className='flex min-h-[620px] min-w-0 flex-col justify-center px-6 py-10 sm:px-10 lg:px-14 lg:py-12'>
                     <div className='mb-9 flex items-center gap-3 lg:hidden'>
-                        <span className='flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-600 text-white'>
+                        <span
+                            className={`flex h-10 w-10 items-center justify-center rounded-xl ${theme.icon}`}>
                             <FileSignature className='h-5 w-5' />
                         </span>
                         <div>
                             <p className='text-sm font-semibold text-slate-900'>
-                                Электронная подпись
+                                MedSign
                             </p>
-                            <p className='text-xs text-slate-500'>Документооборот</p>
+                            <p className='text-xs text-slate-500'>
+                                {organization.shortName}
+                            </p>
                         </div>
                     </div>
 

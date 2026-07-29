@@ -26,13 +26,20 @@ import {
     ShieldAlert,
     UserRound,
     ChevronRight,
+    Building2,
 } from "lucide-react";
+import {
+    getActiveOrganization,
+    getOrganizationTheme,
+} from "../config/organizations";
 
 export default function MainLayout() {
     const [user, setUser] = useState(getCurrentUser());
     const [pendingCount, setPendingCount] = useState(0);
+    const [organization] = useState(getActiveOrganization);
     const location = useLocation();
     const isAdmin = isAdminUser(user);
+    const organizationTheme = getOrganizationTheme(organization);
 
     const loadPendingCount = async () => {
         try {
@@ -70,13 +77,15 @@ export default function MainLayout() {
 
     useEffect(() => {
         const handleUserUpdated = (event) => {
-            setUser(event.detail || getCurrentUser());
+            if (event.detail?.organizationCode === organization.code) {
+                setUser(event.detail.user || getCurrentUser());
+            }
         };
 
         window.addEventListener("auth:user-updated", handleUserUpdated);
         return () =>
             window.removeEventListener("auth:user-updated", handleUserUpdated);
-    }, []);
+    }, [organization.code]);
 
     useEffect(() => {
         let mounted = true;
@@ -334,18 +343,27 @@ export default function MainLayout() {
         <div className='min-h-screen bg-slate-50 text-gray-900 lg:flex'>
             <aside className='hidden lg:sticky lg:top-0 lg:flex lg:h-screen lg:w-72 lg:shrink-0 lg:flex-col lg:border-r lg:border-gray-200 lg:bg-white'>
                 <div className='flex h-full flex-col px-4 py-5'>
-                    <div className='mb-6 flex items-center gap-3 px-2'>
-                        <div className='flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-sm'>
-                            <FileText className='h-6 w-6' />
+                    <div className='mb-6 px-2'>
+                        <div className='flex items-center gap-3'>
+                            <div
+                                className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl shadow-sm ${organizationTheme.icon}`}>
+                                <FileText className='h-6 w-6' />
+                            </div>
+                            <div className='min-w-0'>
+                                <p className='truncate text-base font-bold text-gray-950'>
+                                    MedSign
+                                </p>
+                                <p className='truncate text-xs text-gray-500'>
+                                    {organization.shortName}
+                                </p>
+                            </div>
                         </div>
-                        <div className='min-w-0'>
-                            <p className='truncate text-base font-bold text-gray-950'>
-                                Электронная подпись
-                            </p>
-                            <p className='truncate text-xs text-gray-500'>
-                                Документооборот
-                            </p>
-                        </div>
+                        <NavLink
+                            to='/organizations'
+                            className='mt-3 flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 transition hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700'>
+                            <Building2 className='h-4 w-4' />
+                            Сменить организацию
+                        </NavLink>
                     </div>
 
                     <nav
@@ -421,12 +439,13 @@ export default function MainLayout() {
                 <header className='sticky top-0 z-40 border-b border-gray-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur lg:hidden'>
                     <div className='flex items-center justify-between gap-3'>
                         <div className='flex min-w-0 items-center gap-3'>
-                            <div className='flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white'>
+                            <div
+                                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${organizationTheme.icon}`}>
                                 <FileText className='h-5 w-5' />
                             </div>
                             <div className='min-w-0'>
                                 <p className='truncate text-sm font-semibold text-gray-500'>
-                                    Электронная подпись
+                                    {organization.shortName}
                                 </p>
                                 <h1 className='truncate text-base font-bold text-gray-950'>
                                     {currentItem.label}
@@ -435,6 +454,12 @@ export default function MainLayout() {
                         </div>
 
                         <div className='flex shrink-0 items-center gap-2'>
+                            <NavLink
+                                to='/organizations'
+                                aria-label='Сменить организацию'
+                                className='flex h-10 w-10 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-indigo-600'>
+                                <Building2 className='h-5 w-5' />
+                            </NavLink>
                             <div className='hidden max-w-36 text-right sm:block'>
                                 <p className='truncate text-sm font-semibold text-gray-900'>
                                     {userName}

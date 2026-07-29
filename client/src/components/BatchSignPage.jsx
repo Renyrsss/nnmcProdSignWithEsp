@@ -30,12 +30,8 @@ const FONT_BOLD_URL =
     "https://fonts.gstatic.com/s/roboto/v30/KFOlCnqEu92Fr1MmWUlvAw.ttf";
 
 const getUserFullName = () => {
-    const user = localStorage.getItem("user");
-    if (user) {
-        const userData = JSON.parse(user);
-        return userData.fullName || userData.username || "";
-    }
-    return "";
+    const user = getCurrentUser();
+    return user?.fullName || user?.username || "";
 };
 
 

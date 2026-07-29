@@ -8,12 +8,15 @@ import {
     Send,
 } from "lucide-react";
 import { requestPasswordReset } from "../api/auth";
+import { getActiveOrganizationCode } from "../config/organizations";
 import AuthShell from "./AuthShell";
 
 const getErrorMessage = (error) =>
     error?.message || "Не удалось отправить запрос. Попробуйте ещё раз.";
 
 export default function ForgotPasswordPage() {
+    const organizationCode = getActiveOrganizationCode();
+    const loginUrl = `/login?organization=${encodeURIComponent(organizationCode)}`;
     const [email, setEmail] = useState("");
     const [submittedEmail, setSubmittedEmail] = useState("");
     const [error, setError] = useState("");
@@ -61,7 +64,7 @@ export default function ForgotPasswordPage() {
 
                 <div className='mt-6 space-y-3'>
                     <Link
-                        to='/login'
+                        to={loginUrl}
                         className='flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 font-semibold text-white transition hover:bg-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-200'>
                         <ArrowLeft className='h-5 w-5' />
                         Вернуться ко входу
@@ -127,7 +130,7 @@ export default function ForgotPasswordPage() {
             </form>
 
             <Link
-                to='/login'
+                to={loginUrl}
                 className='mt-6 flex items-center justify-center gap-2 text-sm font-semibold text-slate-600 transition hover:text-indigo-700'>
                 <ArrowLeft className='h-4 w-4' />
                 Вернуться ко входу

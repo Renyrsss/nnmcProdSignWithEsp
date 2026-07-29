@@ -21,6 +21,7 @@ import ProfilePage from "./components/ProfilePage";
 import Login from "./components/Login";
 import ForgotPasswordPage from "./components/ForgotPasswordPage";
 import ResetPasswordPage from "./components/ResetPasswordPage";
+import OrganizationPortal from "./components/OrganizationPortal";
 import { ToastProvider } from "./components/Toast";
 import "./App.css";
 
@@ -29,6 +30,10 @@ function App() {
         <ToastProvider>
             <BrowserRouter>
                 <Routes>
+                    <Route
+                        path='/organizations'
+                        element={<OrganizationPortal />}
+                    />
                     <Route path='/login' element={<Login />} />
                     <Route
                         path='/forgot-password'

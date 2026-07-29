@@ -34,6 +34,20 @@ const getClientUrl = () =>
         .trim()
         .replace(/\/$/, "");
 
+const getOrganizationCode = () => {
+    const code = String(process.env.ORGANIZATION_CODE || "nnmc")
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]/g, "");
+    return code || "nnmc";
+};
+
+const buildClientUrl = (path: string) => {
+    const url = new URL(path, `${getClientUrl()}/`);
+    url.searchParams.set("organization", getOrganizationCode());
+    return url.toString();
+};
+
 const getDigestWindowSeconds = () =>
     boundedInt(process.env.DOCUMENT_EMAIL_DIGEST_WINDOW_SECONDS, 120, 30, 1800);
 
@@ -186,13 +200,14 @@ const buildDigestEmail = (rows: any[]) => {
     const visibleRows = sorted.slice(0, getMaxDigestItems());
     const remaining = count - visibleRows.length;
     const recipientName = rows[0]?.recipientName || "пользователь";
-    const clientUrl = getClientUrl();
     const singleDocumentId =
         rows[0]?.documentDocumentId || rows[0]?.documentNumericId;
     const actionUrl =
         count === 1 && singleDocumentId
-            ? `${clientUrl}/documents/${encodeURIComponent(singleDocumentId)}`
-            : `${clientUrl}/documents`;
+            ? buildClientUrl(
+                  `/documents/${encodeURIComponent(singleDocumentId)}`
+              )
+            : buildClientUrl("/documents");
     const subject =
         count === 1
             ? `Новый документ на подпись: ${String(
@@ -286,7 +301,7 @@ const buildUnsignedReminderEmail = (rows: any[]) => {
     const visibleRows = sorted.slice(0, getMaxDigestItems());
     const remaining = count - visibleRows.length;
     const recipientName = rows[0]?.recipientName || "пользователь";
-    const actionUrl = `${getClientUrl()}/documents`;
+    const actionUrl = buildClientUrl("/documents");
     const subject = `Напоминание: документы ожидают вашей подписи — ${count}`;
     const textItems = visibleRows.map((row, index) => {
         const deadline = formatDeadline(row.documentDeadlineAt);

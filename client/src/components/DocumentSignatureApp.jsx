@@ -12,14 +12,10 @@ import {
 import EdsSignature from "./EdsSignature";
 import { useToast } from "./Toast";
 import { reportDocumentSignatureError } from "../api/documents";
+import { getCurrentUser } from "../api/auth";
 
 const getUserFullName = () => {
-    const user = localStorage.getItem("user");
-    if (user) {
-        const userData = JSON.parse(user);
-        return userData.fullName || "";
-    }
-    return "";
+    return getCurrentUser()?.fullName || "";
 };
 
 export default function DocumentSignatureApp({

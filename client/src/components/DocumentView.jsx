@@ -10,6 +10,7 @@ import {
 } from "../api/documents";
 import { getCurrentUser, isAdminUser } from "../api/auth";
 import { getAdminDocument } from "../api/admin";
+import { getBackendBaseUrl } from "../config/organizations";
 import {
     FileText,
     Clock,
@@ -30,8 +31,6 @@ import {
 import DocumentSignatureApp from "./DocumentSignatureApp";
 import ConfirmModal from "./ConfirmModal";
 import { useToast } from "./Toast";
-
-const API_BASE = import.meta.env.VITE_API_BASE;
 
 export default function DocumentView() {
     const toast = useToast();
@@ -76,7 +75,7 @@ export default function DocumentView() {
         if (fileUrl.startsWith("http://") || fileUrl.startsWith("https://")) {
             return fileUrl;
         }
-        return `${API_BASE}${fileUrl}`;
+        return `${getBackendBaseUrl()}${fileUrl}`;
     };
 
     useEffect(() => {

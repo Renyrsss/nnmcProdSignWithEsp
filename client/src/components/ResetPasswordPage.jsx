@@ -14,6 +14,7 @@ import {
     getPublicPasswordPolicy,
     resetPasswordWithToken,
 } from "../api/auth";
+import { getActiveOrganizationCode } from "../config/organizations";
 import AuthShell from "./AuthShell";
 
 const defaultPolicy = {
@@ -31,6 +32,8 @@ const getErrorMessage = (error) =>
 export default function ResetPasswordPage() {
     const [searchParams] = useSearchParams();
     const token = searchParams.get("token")?.trim() || "";
+    const organizationCode = getActiveOrganizationCode();
+    const organizationQuery = `?organization=${encodeURIComponent(organizationCode)}`;
     const [policy, setPolicy] = useState(defaultPolicy);
     const [password, setPassword] = useState("");
     const [confirmation, setConfirmation] = useState("");
@@ -121,7 +124,7 @@ export default function ResetPasswordPage() {
                     из письма или начните восстановление заново.
                 </div>
                 <Link
-                    to='/forgot-password'
+                    to={`/forgot-password${organizationQuery}`}
                     className='mt-6 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 font-semibold text-white transition hover:bg-indigo-700'>
                     <KeyRound className='h-5 w-5' />
                     Запросить новую ссылку
@@ -153,7 +156,7 @@ export default function ResetPasswordPage() {
                     </div>
                 </div>
                 <Link
-                    to='/login'
+                    to={`/login${organizationQuery}`}
                     className='mt-6 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 font-semibold text-white transition hover:bg-indigo-700'>
                     Перейти ко входу
                 </Link>
@@ -238,7 +241,7 @@ export default function ResetPasswordPage() {
             </form>
 
             <Link
-                to='/login'
+                to={`/login${organizationQuery}`}
                 className='mt-6 flex items-center justify-center gap-2 text-sm font-semibold text-slate-600 transition hover:text-indigo-700'>
                 <ArrowLeft className='h-4 w-4' />
                 Вернуться ко входу

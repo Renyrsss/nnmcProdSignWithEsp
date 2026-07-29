@@ -25,6 +25,26 @@ const isAppAdminRole = (role: any): boolean => {
 
 const cleanString = (value: any) => String(value || "").trim();
 
+const getOrganizationContext = () => {
+    const configuredCode = cleanString(process.env.ORGANIZATION_CODE || "nnmc")
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]/g, "");
+
+    return {
+        code: configuredCode || "nnmc",
+        name: cleanString(
+            process.env.ORGANIZATION_NAME ||
+                "Национальный научный медицинский центр"
+        ),
+        shortName: cleanString(
+            process.env.ORGANIZATION_SHORT_NAME || "ННМЦ"
+        ),
+        exchangeEnabled:
+            String(process.env.INTERORG_EXCHANGE_ENABLED || "false").toLowerCase() ===
+            "true",
+    };
+};
+
 const normalizePhoneNumber = (value: any) => {
     const raw = cleanString(value);
     if (!raw) return "";
@@ -89,6 +109,7 @@ const buildPasswordResetUrl = (token: string) => {
     ).replace(/\/$/, "");
     const url = new URL(`${clientUrl}/reset-password`);
     url.searchParams.set("token", token);
+    url.searchParams.set("organization", getOrganizationContext().code);
     return url.toString();
 };
 
@@ -2403,6 +2424,15 @@ const enqueueDocumentAssignmentEmails = async (
 export default factories.createCoreController(
     "api::document.document",
     ({ strapi }) => ({
+        /**
+         * Public deployment identity. The shared frontend checks it before
+         * sending credentials, preventing the selected Mexel context from
+         * accidentally using the NNMC backend (or vice versa).
+         */
+        async getPublicOrganizationContext(ctx) {
+            return ctx.send({ data: getOrganizationContext() });
+        },
+
         /**
          * GET /api/auth/password/policy
          *

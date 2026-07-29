@@ -1,3 +1,12 @@
+const getCorsOrigins = () => {
+  const configured = String(process.env.CORS_ORIGINS || '*')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  return configured.length > 0 ? configured : ['*'];
+};
+
 export default [
   'strapi::logger',
   'strapi::errors',
@@ -5,7 +14,7 @@ export default [
   {
     name: 'strapi::cors',
     config: {
-      origin: ['*'],
+      origin: getCorsOrigins(),
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'],
       headers: ['Content-Type', 'Authorization', 'Origin', 'Accept', 'X-Session-Version'],
       keepHeaderOnError: true,

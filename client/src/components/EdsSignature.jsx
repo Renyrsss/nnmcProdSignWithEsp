@@ -3,6 +3,7 @@ import { PDFDocument, rgb } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import QRCode from "qrcode";
 import { Shield, CheckCircle, Download, Loader2 } from "lucide-react";
+import { getCurrentUser } from "../api/auth";
 
 const NCA_LAYER_URL = "wss://127.0.0.1:13579/";
 
@@ -14,12 +15,8 @@ const FONT_BOLD_URL =
 
 // Получаем ФИО из localStorage
 const getUserFullName = () => {
-    const user = localStorage.getItem("user");
-    if (user) {
-        const userData = JSON.parse(user);
-        return userData.fullName || userData.username || "";
-    }
-    return "";
+    const user = getCurrentUser();
+    return user?.fullName || user?.username || "";
 };
 
 // Форматируем ФИО в короткий формат: Фамилия И.О.

@@ -2,6 +2,12 @@ export default {
     routes: [
         {
             method: "GET",
+            path: "/system/organization",
+            handler: "api::document.document.getPublicOrganizationContext",
+            config: { auth: false, policies: [], middlewares: [] },
+        },
+        {
+            method: "GET",
             path: "/auth/password/policy",
             handler: "api::document.document.getPublicPasswordPolicy",
             config: { auth: false, policies: [], middlewares: [] },

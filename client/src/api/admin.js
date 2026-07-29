@@ -1,11 +1,10 @@
 import axios from "axios";
-import { getToken } from "./auth";
-
-const API_URL = `${import.meta.env.VITE_API_BASE}/api`;
+import { getCurrentUser, getToken } from "./auth";
+import { getApiRoot } from "../config/organizations";
 
 const getStoredSessionVersion = () => {
     try {
-        const user = JSON.parse(localStorage.getItem("user") || "null");
+        const user = getCurrentUser();
         return user?.sessionVersion || null;
     } catch {
         return null;
@@ -32,7 +31,7 @@ const buildQuery = (params = {}) => {
 export const getAdminDocuments = async (params = {}) => {
     const query = buildQuery(params);
     const response = await axios.get(
-        `${API_URL}/admin/documents${query ? `?${query}` : ""}`,
+        `${getApiRoot()}/admin/documents${query ? `?${query}` : ""}`,
         { headers: authHeaders() }
     );
     return response.data;
@@ -41,7 +40,7 @@ export const getAdminDocuments = async (params = {}) => {
 export const getAdminReports = async (params = {}) => {
     const query = buildQuery(params);
     const response = await axios.get(
-        `${API_URL}/admin/reports${query ? `?${query}` : ""}`,
+        `${getApiRoot()}/admin/reports${query ? `?${query}` : ""}`,
         { headers: authHeaders() }
     );
     return response.data;
@@ -50,7 +49,7 @@ export const getAdminReports = async (params = {}) => {
 export const exportAdminReportsCsv = async (params = {}) => {
     const query = buildQuery(params);
     const response = await axios.get(
-        `${API_URL}/admin/reports/export${query ? `?${query}` : ""}`,
+        `${getApiRoot()}/admin/reports/export${query ? `?${query}` : ""}`,
         {
             headers: authHeaders(),
             responseType: "blob",
@@ -62,7 +61,7 @@ export const exportAdminReportsCsv = async (params = {}) => {
 export const getAdminArchive = async (params = {}) => {
     const query = buildQuery(params);
     const response = await axios.get(
-        `${API_URL}/admin/archive${query ? `?${query}` : ""}`,
+        `${getApiRoot()}/admin/archive${query ? `?${query}` : ""}`,
         { headers: authHeaders() }
     );
     return response.data;
@@ -70,7 +69,7 @@ export const getAdminArchive = async (params = {}) => {
 
 export const archiveAdminDocument = async (documentId, reason) => {
     const response = await axios.post(
-        `${API_URL}/admin/documents/${documentId}/archive`,
+        `${getApiRoot()}/admin/documents/${documentId}/archive`,
         { reason },
         { headers: authHeaders() }
     );
@@ -79,7 +78,7 @@ export const archiveAdminDocument = async (documentId, reason) => {
 
 export const restoreAdminDocument = async (documentId, reason = "") => {
     const response = await axios.post(
-        `${API_URL}/admin/documents/${documentId}/restore`,
+        `${getApiRoot()}/admin/documents/${documentId}/restore`,
         { reason },
         { headers: authHeaders() }
     );
@@ -88,7 +87,7 @@ export const restoreAdminDocument = async (documentId, reason = "") => {
 
 export const exportAdminDocumentArchive = async (documentId) => {
     const response = await axios.get(
-        `${API_URL}/admin/documents/${documentId}/archive-export`,
+        `${getApiRoot()}/admin/documents/${documentId}/archive-export`,
         {
             headers: authHeaders(),
             responseType: "blob",
@@ -98,14 +97,14 @@ export const exportAdminDocumentArchive = async (documentId) => {
 };
 
 export const getAdminSecurity = async () => {
-    const response = await axios.get(`${API_URL}/admin/security`, {
+    const response = await axios.get(`${getApiRoot()}/admin/security`, {
         headers: authHeaders(),
     });
     return response.data.data;
 };
 
 export const updateAdminSecuritySettings = async (payload) => {
-    const response = await axios.put(`${API_URL}/admin/security/settings`, payload, {
+    const response = await axios.put(`${getApiRoot()}/admin/security/settings`, payload, {
         headers: authHeaders(),
     });
     return response.data.data;
@@ -113,7 +112,7 @@ export const updateAdminSecuritySettings = async (payload) => {
 
 export const forceLogoutAdminUser = async (userId, reason = "") => {
     const response = await axios.post(
-        `${API_URL}/admin/security/users/${userId}/force-logout`,
+        `${getApiRoot()}/admin/security/users/${userId}/force-logout`,
         { reason },
         { headers: authHeaders() }
     );
@@ -121,7 +120,7 @@ export const forceLogoutAdminUser = async (userId, reason = "") => {
 };
 
 export const getAdminRolePermissions = async () => {
-    const response = await axios.get(`${API_URL}/admin/role-permissions`, {
+    const response = await axios.get(`${getApiRoot()}/admin/role-permissions`, {
         headers: authHeaders(),
     });
     return response.data.data;
@@ -129,7 +128,7 @@ export const getAdminRolePermissions = async () => {
 
 export const updateAdminRolePermissions = async (matrix) => {
     const response = await axios.put(
-        `${API_URL}/admin/role-permissions`,
+        `${getApiRoot()}/admin/role-permissions`,
         { matrix },
         { headers: authHeaders() }
     );
@@ -137,7 +136,7 @@ export const updateAdminRolePermissions = async (matrix) => {
 };
 
 export const getAdminDocument = async (id) => {
-    const response = await axios.get(`${API_URL}/admin/documents/${id}`, {
+    const response = await axios.get(`${getApiRoot()}/admin/documents/${id}`, {
         headers: authHeaders(),
     });
     return response.data.data;
@@ -145,7 +144,7 @@ export const getAdminDocument = async (id) => {
 
 export const cancelAdminDocument = async (documentId, reason) => {
     const response = await axios.post(
-        `${API_URL}/admin/documents/${documentId}/cancel`,
+        `${getApiRoot()}/admin/documents/${documentId}/cancel`,
         { reason },
         { headers: authHeaders() }
     );
@@ -154,7 +153,7 @@ export const cancelAdminDocument = async (documentId, reason) => {
 
 export const reassignAdminDocumentSigner = async (documentId, payload) => {
     const response = await axios.post(
-        `${API_URL}/admin/documents/${documentId}/reassign-signer`,
+        `${getApiRoot()}/admin/documents/${documentId}/reassign-signer`,
         payload,
         { headers: authHeaders() }
     );
@@ -163,7 +162,7 @@ export const reassignAdminDocumentSigner = async (documentId, payload) => {
 
 export const updateAdminDocumentDeadline = async (documentId, payload) => {
     const response = await axios.put(
-        `${API_URL}/admin/documents/${documentId}/deadline`,
+        `${getApiRoot()}/admin/documents/${documentId}/deadline`,
         payload,
         { headers: authHeaders() }
     );
@@ -172,7 +171,7 @@ export const updateAdminDocumentDeadline = async (documentId, payload) => {
 
 export const requestAdminDocumentReminder = async (documentId, payload) => {
     const response = await axios.post(
-        `${API_URL}/admin/documents/${documentId}/reminder`,
+        `${getApiRoot()}/admin/documents/${documentId}/reminder`,
         payload,
         { headers: authHeaders() }
     );
@@ -182,7 +181,7 @@ export const requestAdminDocumentReminder = async (documentId, payload) => {
 export const getAdminAuditLogs = async (params = {}) => {
     const query = buildQuery(params);
     const response = await axios.get(
-        `${API_URL}/admin/audit-logs${query ? `?${query}` : ""}`,
+        `${getApiRoot()}/admin/audit-logs${query ? `?${query}` : ""}`,
         { headers: authHeaders() }
     );
     return response.data;
@@ -191,7 +190,7 @@ export const getAdminAuditLogs = async (params = {}) => {
 export const getAdminSignatureMonitoring = async (params = {}) => {
     const query = buildQuery(params);
     const response = await axios.get(
-        `${API_URL}/admin/signature-monitoring${query ? `?${query}` : ""}`,
+        `${getApiRoot()}/admin/signature-monitoring${query ? `?${query}` : ""}`,
         { headers: authHeaders() }
     );
     return response.data;
@@ -199,7 +198,7 @@ export const getAdminSignatureMonitoring = async (params = {}) => {
 
 export const recheckAdminDocumentSignatures = async (documentId) => {
     const response = await axios.post(
-        `${API_URL}/admin/documents/${documentId}/recheck-signatures`,
+        `${getApiRoot()}/admin/documents/${documentId}/recheck-signatures`,
         {},
         { headers: authHeaders() }
     );
@@ -207,21 +206,21 @@ export const recheckAdminDocumentSignatures = async (documentId) => {
 };
 
 export const getAdminPlatformSettings = async () => {
-    const response = await axios.get(`${API_URL}/admin/platform-settings`, {
+    const response = await axios.get(`${getApiRoot()}/admin/platform-settings`, {
         headers: authHeaders(),
     });
     return response.data.data;
 };
 
 export const updateAdminPlatformSettings = async (payload) => {
-    const response = await axios.put(`${API_URL}/admin/platform-settings`, payload, {
+    const response = await axios.put(`${getApiRoot()}/admin/platform-settings`, payload, {
         headers: authHeaders(),
     });
     return response.data.data;
 };
 
 export const getAdminNotificationTemplates = async () => {
-    const response = await axios.get(`${API_URL}/admin/notification-templates`, {
+    const response = await axios.get(`${getApiRoot()}/admin/notification-templates`, {
         headers: authHeaders(),
     });
     return response.data;
@@ -229,7 +228,7 @@ export const getAdminNotificationTemplates = async () => {
 
 export const createAdminNotificationTemplate = async (payload) => {
     const response = await axios.post(
-        `${API_URL}/admin/notification-templates`,
+        `${getApiRoot()}/admin/notification-templates`,
         payload,
         { headers: authHeaders() }
     );
@@ -238,7 +237,7 @@ export const createAdminNotificationTemplate = async (payload) => {
 
 export const updateAdminNotificationTemplate = async (templateId, payload) => {
     const response = await axios.put(
-        `${API_URL}/admin/notification-templates/${templateId}`,
+        `${getApiRoot()}/admin/notification-templates/${templateId}`,
         payload,
         { headers: authHeaders() }
     );
@@ -247,35 +246,35 @@ export const updateAdminNotificationTemplate = async (templateId, payload) => {
 
 export const deleteAdminNotificationTemplate = async (templateId) => {
     const response = await axios.delete(
-        `${API_URL}/admin/notification-templates/${templateId}`,
+        `${getApiRoot()}/admin/notification-templates/${templateId}`,
         { headers: authHeaders() }
     );
     return response.data.data;
 };
 
 export const getAdminUsers = async () => {
-    const response = await axios.get(`${API_URL}/admin/users`, {
+    const response = await axios.get(`${getApiRoot()}/admin/users`, {
         headers: authHeaders(),
     });
     return response.data.data;
 };
 
 export const createAdminUser = async (payload) => {
-    const response = await axios.post(`${API_URL}/admin/users`, payload, {
+    const response = await axios.post(`${getApiRoot()}/admin/users`, payload, {
         headers: authHeaders(),
     });
     return response.data.data;
 };
 
 export const updateAdminUser = async (userId, payload) => {
-    const response = await axios.put(`${API_URL}/admin/users/${userId}`, payload, {
+    const response = await axios.put(`${getApiRoot()}/admin/users/${userId}`, payload, {
         headers: authHeaders(),
     });
     return response.data.data;
 };
 
 export const createAdminDepartment = async (payload) => {
-    const response = await axios.post(`${API_URL}/admin/departments`, payload, {
+    const response = await axios.post(`${getApiRoot()}/admin/departments`, payload, {
         headers: authHeaders(),
     });
     return response.data.data;
@@ -283,7 +282,7 @@ export const createAdminDepartment = async (payload) => {
 
 export const updateAdminDepartment = async (departmentId, payload) => {
     const response = await axios.put(
-        `${API_URL}/admin/departments/${departmentId}`,
+        `${getApiRoot()}/admin/departments/${departmentId}`,
         payload,
         { headers: authHeaders() }
     );
@@ -291,21 +290,21 @@ export const updateAdminDepartment = async (departmentId, payload) => {
 };
 
 export const deleteAdminDepartment = async (departmentId) => {
-    const response = await axios.delete(`${API_URL}/admin/departments/${departmentId}`, {
+    const response = await axios.delete(`${getApiRoot()}/admin/departments/${departmentId}`, {
         headers: authHeaders(),
     });
     return response.data.data;
 };
 
 export const getAdminDocumentTypes = async () => {
-    const response = await axios.get(`${API_URL}/admin/document-types`, {
+    const response = await axios.get(`${getApiRoot()}/admin/document-types`, {
         headers: authHeaders(),
     });
     return response.data.data;
 };
 
 export const createAdminDocumentType = async (payload) => {
-    const response = await axios.post(`${API_URL}/admin/document-types`, payload, {
+    const response = await axios.post(`${getApiRoot()}/admin/document-types`, payload, {
         headers: authHeaders(),
     });
     return response.data.data;
@@ -313,7 +312,7 @@ export const createAdminDocumentType = async (payload) => {
 
 export const updateAdminDocumentType = async (documentTypeId, payload) => {
     const response = await axios.put(
-        `${API_URL}/admin/document-types/${documentTypeId}`,
+        `${getApiRoot()}/admin/document-types/${documentTypeId}`,
         payload,
         { headers: authHeaders() }
     );
@@ -322,7 +321,7 @@ export const updateAdminDocumentType = async (documentTypeId, payload) => {
 
 export const deleteAdminDocumentType = async (documentTypeId) => {
     const response = await axios.delete(
-        `${API_URL}/admin/document-types/${documentTypeId}`,
+        `${getApiRoot()}/admin/document-types/${documentTypeId}`,
         { headers: authHeaders() }
     );
     return response.data.data;
@@ -330,7 +329,7 @@ export const deleteAdminDocumentType = async (documentTypeId) => {
 
 export const changeUserPassword = async (userId, password) => {
     const response = await axios.put(
-        `${API_URL}/admin/users/${userId}/password`,
+        `${getApiRoot()}/admin/users/${userId}/password`,
         { password },
         { headers: authHeaders() }
     );
@@ -339,7 +338,7 @@ export const changeUserPassword = async (userId, password) => {
 
 export const updateUserBlocked = async (userId, blocked) => {
     const response = await axios.put(
-        `${API_URL}/admin/users/${userId}/status`,
+        `${getApiRoot()}/admin/users/${userId}/status`,
         { blocked },
         { headers: authHeaders() }
     );
