@@ -1707,12 +1707,25 @@ const isSigningUpdate = (updateData: any) =>
     );
 
 const getDocumentTypeForCreate = async (strapi: any, documentTypeId: any) => {
+    if (isEmptyRelationId(documentTypeId)) return null;
+
     const normalizedId = normalizeOptionalId(documentTypeId);
-    if (!normalizedId) return null;
+    const documentId = cleanString(documentTypeId);
 
     return strapi.db.query("api::document-type.document-type").findOne({
-        where: { id: normalizedId },
+        where: normalizedId ? { id: normalizedId } : { documentId },
         populate: ["allowedDepartments"],
+    });
+};
+
+const getSubdivisionForCreate = async (strapi: any, subdivisionId: any) => {
+    if (isEmptyRelationId(subdivisionId)) return null;
+
+    const normalizedId = normalizeOptionalId(subdivisionId);
+    const documentId = cleanString(subdivisionId);
+
+    return strapi.db.query("api::subdivision.subdivision").findOne({
+        where: normalizedId ? { id: normalizedId } : { documentId },
     });
 };
 
@@ -1722,9 +1735,28 @@ const normalizeCreateDocumentByTypeRules = async (
     creator: any
 ) => {
     const documentType = await getDocumentTypeForCreate(strapi, data.documentType);
-    if (!documentType) return { data };
+    if (!isEmptyRelationId(data.documentType) && !documentType) {
+        return { error: "Выбранный тип документа не найден" };
+    }
 
-    const signers = Array.isArray(data.signers) ? data.signers : [];
+    const subdivision = await getSubdivisionForCreate(strapi, data.subdivision);
+    if (!isEmptyRelationId(data.subdivision) && !subdivision) {
+        return { error: "Выбранное подразделение не найдено" };
+    }
+
+    const nextData = {
+        ...data,
+        ...(documentType
+            ? { documentType: documentType.documentId || documentType.id }
+            : {}),
+        ...(subdivision
+            ? { subdivision: subdivision.documentId || subdivision.id }
+            : {}),
+    };
+
+    if (!documentType) return { data: nextData };
+
+    const signers = Array.isArray(nextData.signers) ? nextData.signers : [];
     const signerIds = new Set(
         signers
             .map((signer: any) => Number(signer?.userId))
@@ -1744,7 +1776,7 @@ const normalizeCreateDocumentByTypeRules = async (
         };
     }
 
-    if (documentType.requiresEds && data.signatureType !== "eds") {
+    if (documentType.requiresEds && nextData.signatureType !== "eds") {
         return { error: "Для выбранного типа документа требуется ЭЦП" };
     }
 
@@ -1763,7 +1795,6 @@ const normalizeCreateDocumentByTypeRules = async (
         }
     }
 
-    const nextData = { ...data };
     if (documentType.defaultSignatureSequential) {
         nextData.signatureSequential = true;
     }
@@ -2676,6 +2707,82 @@ export default factories.createCoreController(
                 actor: fullUser,
             });
             return ctx.send({ data: sanitized });
+        },
+
+        /**
+         * POST /api/documents/validate-create
+         *
+         * Выполняет авторитетную проверку бизнес-правил до загрузки PDF/CMS.
+         * Сам документ и файлы этот endpoint не создаёт.
+         */
+        async validateCreate(ctx) {
+            const user = ctx.state.user;
+            if (!user) return ctx.unauthorized("Необходима авторизация");
+
+            const fullUser = await getAuthenticatedUser(strapi, user.id);
+            if (!isActiveUserSession(ctx, fullUser)) {
+                return ctx.unauthorized("Сессия завершена администратором");
+            }
+            if (!(await hasUserRolePermission(strapi, fullUser, "createDocuments"))) {
+                return ctx.forbidden("Ваша роль не может создавать документы");
+            }
+
+            const data = ctx.request.body?.data || {};
+            if (isEmptyRelationId(data.documentType)) {
+                return ctx.badRequest("Выберите вид документа");
+            }
+            if (!Array.isArray(data.signers) || data.signers.length === 0) {
+                return ctx.badRequest("Выберите хотя бы одного подписанта");
+            }
+            if (!["eds", "simple"].includes(data.signatureType)) {
+                return ctx.badRequest("Выберите тип подписи");
+            }
+
+            const signerIds = Array.from(
+                new Set(
+                    data.signers
+                        .map((signer: any) => Number(signer?.userId))
+                        .filter((signerId: number) => Number.isFinite(signerId))
+                )
+            );
+            if (signerIds.length !== data.signers.length) {
+                return ctx.badRequest("Список подписантов содержит некорректные данные");
+            }
+
+            const activeSigners = await strapi.db
+                .query("plugin::users-permissions.user")
+                .findMany({
+                    where: {
+                        id: { $in: signerIds },
+                        blocked: false,
+                    },
+                    select: ["id"],
+                });
+            if (activeSigners.length !== signerIds.length) {
+                return ctx.badRequest(
+                    "Один или несколько подписантов не найдены либо заблокированы"
+                );
+            }
+
+            const normalized = await normalizeCreateDocumentByTypeRules(
+                strapi,
+                data,
+                fullUser
+            );
+            if (normalized.error) return ctx.badRequest(normalized.error);
+
+            return ctx.send({
+                data: {
+                    valid: true,
+                    documentType: normalized.data.documentType || null,
+                    subdivision: normalized.data.subdivision || null,
+                    signatureSequential: Boolean(
+                        normalized.data.signatureSequential
+                    ),
+                    signingDeadlineAt:
+                        normalized.data.signingDeadlineAt || null,
+                },
+            });
         },
 
         async create(ctx) {

@@ -3,6 +3,7 @@ import {
     getAllUsers,
     uploadFile,
     createDocument,
+    validateDocumentCreate,
     completeDocumentNotificationBatch,
 } from "../api/documents";
 import { getDocumentTypes } from "../api/documentTypes";
@@ -60,6 +61,12 @@ export default function DocumentCreate() {
     const toast = useToast();
 
     const isMultipleFiles = files.length > 1;
+    const selectedDocumentType = documentTypes.find(
+        (type) => String(type.id) === String(documentTypeId)
+    );
+    const simpleSignatureDisabled = Boolean(
+        isMultipleFiles || selectedDocumentType?.requiresEds
+    );
 
     useEffect(() => {
         loadUsers();
@@ -106,15 +113,22 @@ export default function DocumentCreate() {
         try {
             const data = await getDocumentTypes();
             const normalized = data.map((type) => {
-                if (type?.attributes) {
-                    return {
-                        id: type.id || type.attributes.documentId,
-                        name: type.attributes.name,
-                    };
-                }
+                const source = type?.attributes || type || {};
                 return {
-                    id: type.id || type.documentId,
-                    name: type.name,
+                    id:
+                        type?.documentId ||
+                        source.documentId ||
+                        type?.id ||
+                        source.id,
+                    name: source.name,
+                    requiresEds: Boolean(source.requiresEds),
+                    defaultSignatureSequential: Boolean(
+                        source.defaultSignatureSequential
+                    ),
+                    signingDeadlineDays: source.signingDeadlineDays || null,
+                    mandatorySigners: Array.isArray(source.mandatorySigners)
+                        ? source.mandatorySigners
+                        : [],
                 };
             });
             normalized.sort((a, b) =>
@@ -160,7 +174,7 @@ export default function DocumentCreate() {
             if (!deptId) return;
             const data = await getSubdivisions(deptId);
             const normalized = data.map((s) => ({
-                id: s.id || s.documentId,
+                id: s.documentId || s.id,
                 name: s.name,
             }));
             normalized.sort((a, b) =>
@@ -214,6 +228,20 @@ export default function DocumentCreate() {
         const newTitles = [...titles];
         newTitles[index] = value;
         setTitles(newTitles);
+    };
+
+    const handleDocumentTypeChange = (value) => {
+        setDocumentTypeId(value);
+        const nextType = documentTypes.find(
+            (type) => String(type.id) === String(value)
+        );
+
+        if (nextType?.requiresEds) {
+            setSignatureType("eds");
+        }
+        if (nextType?.defaultSignatureSequential) {
+            setSequential(true);
+        }
     };
 
     const handleAddSigner = (user) => {
@@ -332,6 +360,25 @@ export default function DocumentCreate() {
 
         setLoading(true);
 
+        let effectiveSequential = sequential;
+        try {
+            const validation = await validateDocumentCreate({
+                documentType: documentTypeId,
+                subdivision: subdivisionId || null,
+                signers: selectedSigners,
+                signatureType,
+                signatureSequential: sequential,
+            });
+            effectiveSequential = Boolean(
+                validation?.signatureSequential || sequential
+            );
+        } catch (error) {
+            console.error("Документ не прошёл предварительную проверку:", error);
+            toast.error(error?.message || "Документ не прошёл проверку", 10000);
+            setLoading(false);
+            return;
+        }
+
         const notificationBatchId =
             signedFiles.length > 1 ? createNotificationBatchId() : null;
         let createdInBatch = false;
@@ -362,6 +409,7 @@ export default function DocumentCreate() {
         try {
             let successCount = 0;
             let errorCount = 0;
+            const failureMessages = [];
 
             for (let i = 0; i < signedFiles.length; i++) {
                 const signedFile = signedFiles[i];
@@ -410,7 +458,7 @@ export default function DocumentCreate() {
                         documentType: documentTypeId || null,
                         subdivision: subdivisionId || null,
                         signers: selectedSigners,
-                        signatureSequential: sequential,
+                        signatureSequential: effectiveSequential,
                         signatureType: signatureType,
                         signatureHistory: [
                             {
@@ -441,17 +489,33 @@ export default function DocumentCreate() {
                         `Ошибка создания документа ${signedFile.title}:`,
                         error
                     );
+                    failureMessages.push(
+                        error?.message || "Неизвестная ошибка backend"
+                    );
                     errorCount++;
                 }
             }
 
             await closeNotificationBatch();
 
+            if (successCount === 0) {
+                toast.error(
+                    `Документ не создан: ${
+                        failureMessages[0] || "backend отклонил запрос"
+                    }`,
+                    10000
+                );
+                return;
+            }
+
             if (errorCount === 0) {
                 toast.success(`Успешно создано документов: ${successCount}`);
             } else {
                 toast.warning(
-                    `Создано: ${successCount}, ошибок: ${errorCount}`
+                    `Создано: ${successCount}, ошибок: ${errorCount}. ${
+                        failureMessages[0] || ""
+                    }`,
+                    10000
                 );
             }
 
@@ -504,7 +568,7 @@ export default function DocumentCreate() {
                                 <select
                                     value={documentTypeId}
                                     onChange={(e) =>
-                                        setDocumentTypeId(e.target.value)
+                                        handleDocumentTypeChange(e.target.value)
                                     }
                                     className='w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500'>
                                     <option value=''>Выберите вид</option>
@@ -706,6 +770,8 @@ export default function DocumentCreate() {
                         <p className='text-gray-600 mb-8'>
                             {isMultipleFiles
                                 ? `Для массового подписания (${files.length} документов) доступен только ЭЦП`
+                                : selectedDocumentType?.requiresEds
+                                ? "Для выбранного вида документа обязательна ЭЦП"
                                 : "Этот тип подписи будет использоваться всеми подписантами документа"}
                         </p>
 
@@ -713,12 +779,12 @@ export default function DocumentCreate() {
                             {/* Простая подпись */}
                             <button
                                 onClick={() =>
-                                    !isMultipleFiles &&
+                                    !simpleSignatureDisabled &&
                                     setSignatureType("simple")
                                 }
-                                disabled={isMultipleFiles}
+                                disabled={simpleSignatureDisabled}
                                 className={`p-6 border-2 rounded-xl text-left transition-all ${
-                                    isMultipleFiles
+                                    simpleSignatureDisabled
                                         ? "border-gray-200 bg-gray-50 opacity-50 cursor-not-allowed"
                                         : signatureType === "simple"
                                         ? "border-indigo-600 bg-indigo-50 ring-2 ring-indigo-600"
@@ -726,14 +792,14 @@ export default function DocumentCreate() {
                                 }`}>
                                 <Pen
                                     className={`w-12 h-12 mb-4 ${
-                                        isMultipleFiles
+                                        simpleSignatureDisabled
                                             ? "text-gray-400"
                                             : "text-indigo-600"
                                     }`}
                                 />
                                 <h3
                                     className={`text-xl font-semibold mb-2 ${
-                                        isMultipleFiles
+                                        simpleSignatureDisabled
                                             ? "text-gray-400"
                                             : "text-gray-800"
                                     }`}>
@@ -741,16 +807,18 @@ export default function DocumentCreate() {
                                 </h3>
                                 <p
                                     className={
-                                        isMultipleFiles
+                                        simpleSignatureDisabled
                                             ? "text-gray-400"
                                             : "text-gray-600"
                                     }>
                                     Подписанты рисуют подпись от руки. Быстро и
                                     просто, не требует дополнительного ПО.
                                 </p>
-                                {isMultipleFiles && (
+                                {simpleSignatureDisabled && (
                                     <p className='text-xs text-red-500 mt-3'>
-                                        Недоступно для массового подписания
+                                        {isMultipleFiles
+                                            ? "Недоступно для массового подписания"
+                                            : "Для этого вида документа требуется ЭЦП"}
                                     </p>
                                 )}
                             </button>

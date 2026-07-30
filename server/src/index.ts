@@ -51,6 +51,7 @@ const AUTHENTICATED_APP_ACTIONS = [
     "api::document.document.create",
     "api::document.document.update",
     "api::document.document.delete",
+    "api::document.document.validateCreate",
     "api::document.document.findMine",
     "api::document.document.getFileUrl",
     "api::document.document.presignUrl",

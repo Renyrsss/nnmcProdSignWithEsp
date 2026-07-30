@@ -61,6 +61,12 @@ export default {
         },
         {
             method: "POST",
+            path: "/documents/validate-create",
+            handler: "api::document.document.validateCreate",
+            config: { policies: [], middlewares: [] },
+        },
+        {
+            method: "POST",
             path: "/documents/notification-batches/:batchId/complete",
             handler: "api::document.document.completeDocumentNotificationBatch",
             config: { policies: [], middlewares: [] },

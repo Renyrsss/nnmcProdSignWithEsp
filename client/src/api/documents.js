@@ -2,6 +2,21 @@ import axios from "axios";
 import { getCurrentUser, getToken } from "./auth";
 import { getApiRoot } from "../config/organizations";
 
+const toDocumentApiError = (error, fallbackMessage) => {
+    const responseError = error?.response?.data?.error;
+    const message =
+        responseError?.message ||
+        error?.response?.data?.message ||
+        error?.message ||
+        fallbackMessage;
+    const normalizedError = new Error(message || fallbackMessage);
+    normalizedError.name = responseError?.name || error?.name || "DocumentApiError";
+    normalizedError.status = error?.response?.status || responseError?.status || null;
+    normalizedError.details = responseError?.details || null;
+    normalizedError.cause = error;
+    return normalizedError;
+};
+
 export const isMyTurnToSign = (doc, userId) => {
     // Документ должен быть активным. Отозванные/завершённые/ревизионные
     // не подписываются даже если у пользователя signer.status === "pending".
@@ -60,22 +75,46 @@ export const createDocument = async (documentData, options = {}) => {
         ? documentData.signers.map((s) => s.userId)
         : [];
 
-    const response = await axios.post(
-        `${getApiRoot()}/documents`,
-        {
-            data: {
-                ...documentData,
-                assigned_users: assignedUserIds,
+    try {
+        const response = await axios.post(
+            `${getApiRoot()}/documents`,
+            {
+                data: {
+                    ...documentData,
+                    assigned_users: assignedUserIds,
+                },
+                ...(options.notificationBatchId
+                    ? { notificationBatchId: options.notificationBatchId }
+                    : {}),
             },
-            ...(options.notificationBatchId
-                ? { notificationBatchId: options.notificationBatchId }
-                : {}),
-        },
-        {
-            headers: { Authorization: `Bearer ${token}` },
-        }
-    );
-    return response.data.data;
+            {
+                headers: { Authorization: `Bearer ${token}` },
+            }
+        );
+        return response.data.data;
+    } catch (error) {
+        throw toDocumentApiError(error, "Не удалось создать документ");
+    }
+};
+
+// Проверяем бизнес-правила до загрузки файлов в MinIO. Это предотвращает
+// появление файлов-сирот, если тип документа требует ЭЦП, обязательного
+// подписанта или другой серверной настройки.
+export const validateDocumentCreate = async (documentData) => {
+    const token = getToken();
+    try {
+        const response = await axios.post(
+            `${getApiRoot()}/documents/validate-create`,
+            { data: documentData },
+            { headers: { Authorization: `Bearer ${token}` } }
+        );
+        return response.data.data;
+    } catch (error) {
+        throw toDocumentApiError(
+            error,
+            "Параметры документа не прошли проверку"
+        );
+    }
 };
 
 export const completeDocumentNotificationBatch = async (batchId) => {
